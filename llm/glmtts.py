@@ -138,11 +138,21 @@ class GLMTTS(nn.Module):
         weighted_scores: torch.Tensor,
         decoded_tokens: List[int],
         sampling: int,
+        top_p: float = 0.8,
+        temperature: float = 1.0,
     ) -> torch.Tensor:
         """
         Wrapper for RAS (Random Access Sampling) method.
         """
-        return common.ras_sampling(weighted_scores, decoded_tokens, sampling, temperature=1)
+        # In RAS, nucleus sampling is controlled by top_p/top_k (top_k := sampling).
+        return common.ras_sampling(
+            weighted_scores,
+            decoded_tokens,
+            sampling=sampling,
+            top_p=top_p,
+            top_k=sampling,
+            temperature=temperature,
+        )
 
     @torch.inference_mode()
     def inference(
@@ -155,6 +165,8 @@ class GLMTTS(nn.Module):
         prompt_speech_token_len: torch.Tensor,
         beam_size: int = 1,
         sampling: int = 25,
+        top_p: float = 0.8,
+        temperature: float = 1.0,
         max_token_text_ratio: float = 20,
         min_token_text_ratio: float = 2,
         sample_method: str = "ras",
@@ -171,7 +183,9 @@ class GLMTTS(nn.Module):
             prompt_speech_token: Prompt speech token tensor.
             prompt_speech_token_len: Length of prompt speech tokens.
             beam_size: Beam size for sampling (default 1).
-            sampling: Top-k value or sampling parameter.
+            sampling: Top-k value.
+            top_p: Nucleus sampling p (only used for sample_method='ras').
+            temperature: Sampling temperature (only used for sample_method='ras').
             max_token_text_ratio: Multiplier to determine max generation length.
             min_token_text_ratio: Multiplier to determine min generation length.
             sample_method: 'ras' or 'topk'.
@@ -181,6 +195,13 @@ class GLMTTS(nn.Module):
             torch.Tensor: Generated audio tokens (shifted by ATS offset).
         """
         device = text.device
+
+        if sampling <= 0:
+            raise ValueError("sampling (top_k) must be > 0")
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError("top_p must be in (0, 1]")
+        if temperature <= 0:
+            raise ValueError("temperature must be > 0")
 
         # 1. Preprocess Prompt Tokens
         # If prompts exist, add the audio start token offset if necessary
@@ -254,7 +275,9 @@ class GLMTTS(nn.Module):
                 top_ids = self.sampling_ids_ras(
                     logp.squeeze(dim=0), 
                     out_tokens, 
-                    sampling
+                    sampling,
+                    top_p=top_p,
+                    temperature=temperature,
                 ).item()
             elif sample_method == "topk":
                 top_ids = self.sampling_ids(

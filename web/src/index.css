@@ -44,11 +44,26 @@ body {
 .status-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   margin-bottom: 1.5rem;
+}
+
+.status-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.status-btn.secondary {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.status-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .status-btn {
@@ -132,7 +147,8 @@ body {
 }
 
 .form-group input[type="number"],
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   width: 100%;
   padding: 0.75rem 1rem;
   background: rgba(0, 0, 0, 0.3);
@@ -146,13 +162,52 @@ body {
 }
 
 .form-group input[type="number"]:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
   outline: none;
   border-color: #667eea;
 }
 
 .form-group textarea::placeholder {
   color: rgba(255, 255, 255, 0.4);
+}
+
+.settings-panel {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+.settings-panel h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 900px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+label.checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
 }
 
 .file-input-wrapper {

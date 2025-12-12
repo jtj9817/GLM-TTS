@@ -236,6 +236,14 @@ async def synthesize(
     speaker_audio: UploadFile = File(..., description="Reference voice audio"),
     speaker_text: str = Form("", description="Text spoken in reference audio"),
     seed: int = Form(42, description="Random seed for reproducibility"),
+    sample_method: str = Form("ras", description="Sampling strategy: ras or topk"),
+    top_k: int = Form(25, description="Top-k for sampling"),
+    top_p: float = Form(0.8, description="Top-p for nucleus sampling (RAS)"),
+    temperature: float = Form(1.0, description="Sampling temperature (RAS)"),
+    min_token_text_ratio: float = Form(2.0, description="Minimum generation length ratio"),
+    max_token_text_ratio: float = Form(20.0, description="Maximum generation length ratio"),
+    use_cache: bool = Form(True, description="Use prompt/history cache for long text"),
+    use_phoneme: bool = Form(False, description="Enable phoneme-in (G2P) processing"),
 ):
     """
     Synthesize speech from text using a reference voice.
@@ -247,6 +255,20 @@ async def synthesize(
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    sample_method = sample_method.lower().strip()
+    if sample_method not in {"ras", "topk"}:
+        raise HTTPException(status_code=400, detail="sample_method must be 'ras' or 'topk'")
+    if top_k < 1 or top_k > 200:
+        raise HTTPException(status_code=400, detail="top_k must be between 1 and 200")
+    if not (0.0 < top_p <= 1.0):
+        raise HTTPException(status_code=400, detail="top_p must be in (0, 1]")
+    if temperature <= 0:
+        raise HTTPException(status_code=400, detail="temperature must be > 0")
+    if min_token_text_ratio <= 0 or max_token_text_ratio <= 0:
+        raise HTTPException(status_code=400, detail="token_text_ratio values must be > 0")
+    if min_token_text_ratio > max_token_text_ratio:
+        raise HTTPException(status_code=400, detail="min_token_text_ratio must be <= max_token_text_ratio")
 
     try:
         # Save uploaded audio to temp file
@@ -275,7 +297,7 @@ async def synthesize(
             "cache_text": [norm_speaker_text] if norm_speaker_text else [],
             "cache_text_token": [prompt_text_token] if prompt_text_token is not None else [],
             "cache_speech_token": cache_speech_token_list,
-            "use_cache": True,
+            "use_cache": use_cache,
         }
 
         # Generate audio
@@ -289,10 +311,15 @@ async def synthesize(
             embedding=speaker_data["embedding"],
             flow_prompt_token=flow_prompt_token,
             speech_feat=speaker_data["speech_feat"],
-            sample_method="ras",
+            sample_method=sample_method,
             seed=seed,
             device=DEVICE,
-            use_phoneme=False,
+            sampling=top_k,
+            top_p=top_p,
+            temperature=temperature,
+            min_token_text_ratio=min_token_text_ratio,
+            max_token_text_ratio=max_token_text_ratio,
+            use_phoneme=use_phoneme,
         )
 
         # Save output
@@ -322,6 +349,14 @@ async def synthesize_base64(
     speaker_audio: UploadFile = File(...),
     speaker_text: str = Form(""),
     seed: int = Form(42),
+    sample_method: str = Form("ras"),
+    top_k: int = Form(25),
+    top_p: float = Form(0.8),
+    temperature: float = Form(1.0),
+    min_token_text_ratio: float = Form(2.0),
+    max_token_text_ratio: float = Form(20.0),
+    use_cache: bool = Form(True),
+    use_phoneme: bool = Form(False),
 ):
     """
     Synthesize speech and return as base64-encoded WAV.
@@ -330,7 +365,20 @@ async def synthesize_base64(
     import base64
 
     # Reuse the main synthesize logic
-    response = await synthesize(text, speaker_audio, speaker_text, seed)
+    response = await synthesize(
+        text=text,
+        speaker_audio=speaker_audio,
+        speaker_text=speaker_text,
+        seed=seed,
+        sample_method=sample_method,
+        top_k=top_k,
+        top_p=top_p,
+        temperature=temperature,
+        min_token_text_ratio=min_token_text_ratio,
+        max_token_text_ratio=max_token_text_ratio,
+        use_cache=use_cache,
+        use_phoneme=use_phoneme,
+    )
 
     # Read the file and encode
     with open(response.path, "rb") as f:

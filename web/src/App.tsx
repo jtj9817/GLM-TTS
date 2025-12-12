@@ -10,6 +10,81 @@ interface ServerHealth {
   speaker_cache_size: number;
 }
 
+type SampleMethod = "ras" | "topk";
+
+type GenerationSettings = {
+  preset: "balanced" | "expressive" | "stable";
+  sample_method: SampleMethod;
+  top_k: number;
+  top_p: number;
+  temperature: number;
+  min_token_text_ratio: number;
+  max_token_text_ratio: number;
+  use_cache: boolean;
+  use_phoneme: boolean;
+};
+
+const SETTINGS_STORAGE_KEY = "glmtts_settings_v1";
+
+const PRESET_BALANCED: GenerationSettings = {
+  preset: "balanced",
+  // Default matches current server-side defaults.
+  sample_method: "ras",
+  top_k: 25,
+  top_p: 0.8,
+  temperature: 1.0,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_EXPRESSIVE: GenerationSettings = {
+  preset: "expressive",
+  sample_method: "ras",
+  // Slightly higher diversity; may reduce stability.
+  top_k: 35,
+  top_p: 0.85,
+  temperature: 1.05,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_STABLE: GenerationSettings = {
+  preset: "stable",
+  // More conservative sampling.
+  sample_method: "topk",
+  top_k: 15,
+  top_p: 0.8,
+  temperature: 1.0,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeSettings(input: GenerationSettings): GenerationSettings {
+  const top_k = Math.floor(clamp(input.top_k, 1, 200));
+  const top_p = clamp(input.top_p, 0.01, 1.0);
+  const temperature = clamp(input.temperature, 0.1, 2.0);
+  const min_token_text_ratio = clamp(input.min_token_text_ratio, 0.5, 50);
+  const max_token_text_ratio = clamp(input.max_token_text_ratio, 0.5, 50);
+  return {
+    ...input,
+    top_k,
+    top_p,
+    temperature,
+    min_token_text_ratio: Math.min(min_token_text_ratio, max_token_text_ratio),
+    max_token_text_ratio: Math.max(min_token_text_ratio, max_token_text_ratio),
+  };
+}
+
 type Generation = {
   id: string;
   input_text: string;
@@ -32,6 +107,24 @@ export function App() {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [serverStatus, setServerStatus] = useState<ServerHealth | null>(null);
   const [statusChecked, setStatusChecked] = useState(false);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<GenerationSettings>(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (!raw) return PRESET_BALANCED;
+      const parsed = JSON.parse(raw) as Partial<GenerationSettings>;
+      const merged: GenerationSettings = {
+        ...PRESET_BALANCED,
+        ...parsed,
+        preset: (parsed.preset as GenerationSettings["preset"]) ?? "balanced",
+        sample_method: (parsed.sample_method as SampleMethod) ?? "ras",
+      };
+      return normalizeSettings(merged);
+    } catch {
+      return PRESET_BALANCED;
+    }
+  });
   
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,6 +140,14 @@ export function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // ignore
+    }
+  }, [settings]);
 
   const checkServerHealth = async () => {
     try {
@@ -105,6 +206,16 @@ export function App() {
       formData.append("speaker_text", referenceText);
       formData.append("seed", seed.toString());
 
+      const s = normalizeSettings(settings);
+      formData.append("sample_method", s.sample_method);
+      formData.append("top_k", String(s.top_k));
+      formData.append("top_p", String(s.top_p));
+      formData.append("temperature", String(s.temperature));
+      formData.append("min_token_text_ratio", String(s.min_token_text_ratio));
+      formData.append("max_token_text_ratio", String(s.max_token_text_ratio));
+      formData.append("use_cache", String(s.use_cache));
+      formData.append("use_phoneme", String(s.use_phoneme));
+
       const response = await fetch(`${API_BASE}/api/synthesize`, {
         method: "POST",
         body: formData,
@@ -146,9 +257,18 @@ export function App() {
       </header>
 
       <div className="status-bar">
-        <button onClick={checkServerHealth} className="status-btn">
-          Check Server
-        </button>
+        <div className="status-actions">
+          <button onClick={checkServerHealth} className="status-btn">
+            Check Server
+          </button>
+          <button
+            onClick={() => setSettingsOpen(v => !v)}
+            className="status-btn secondary"
+            type="button"
+          >
+            Settings
+          </button>
+        </div>
         {statusChecked && (
           <span className={`status-indicator ${serverStatus?.status === "healthy" ? "healthy" : "error"}`}>
             {serverStatus?.status === "healthy" 
@@ -157,6 +277,179 @@ export function App() {
           </span>
         )}
       </div>
+
+      {settingsOpen && (
+        <div className="settings-panel">
+          <h2>Settings</h2>
+
+          <div className="form-group">
+            <label>Preset</label>
+            <select
+              value={settings.preset}
+              onChange={e => {
+                const preset = e.target.value as GenerationSettings["preset"];
+                const next =
+                  preset === "expressive"
+                    ? PRESET_EXPRESSIVE
+                    : preset === "stable"
+                      ? PRESET_STABLE
+                      : PRESET_BALANCED;
+                setSettings(normalizeSettings(next));
+              }}
+            >
+              <option value="balanced">Balanced (default)</option>
+              <option value="expressive">More expressive</option>
+              <option value="stable">More stable</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Sampling Strategy</label>
+            <select
+              value={settings.sample_method}
+              onChange={e =>
+                setSettings(prev =>
+                  normalizeSettings({
+                    ...prev,
+                    preset: "balanced",
+                    sample_method: e.target.value as SampleMethod,
+                  }),
+                )
+              }
+            >
+              <option value="ras">RAS (recommended)</option>
+              <option value="topk">Top-k</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Top-k</label>
+            <input
+              type="number"
+              value={settings.top_k}
+              min={1}
+              max={200}
+              onChange={e =>
+                setSettings(prev =>
+                  normalizeSettings({ ...prev, preset: "balanced", top_k: Number(e.target.value) }),
+                )
+              }
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Top-p (RAS)</label>
+              <input
+                type="number"
+                step={0.01}
+                value={settings.top_p}
+                min={0.01}
+                max={1}
+                disabled={settings.sample_method !== "ras"}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({ ...prev, preset: "balanced", top_p: Number(e.target.value) }),
+                  )
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label>Temperature (RAS)</label>
+              <input
+                type="number"
+                step={0.01}
+                value={settings.temperature}
+                min={0.1}
+                max={2}
+                disabled={settings.sample_method !== "ras"}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({
+                      ...prev,
+                      preset: "balanced",
+                      temperature: Number(e.target.value),
+                    }),
+                  )
+                }
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Min length ratio</label>
+              <input
+                type="number"
+                step={0.5}
+                value={settings.min_token_text_ratio}
+                min={0.5}
+                max={50}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({
+                      ...prev,
+                      preset: "balanced",
+                      min_token_text_ratio: Number(e.target.value),
+                    }),
+                  )
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label>Max length ratio</label>
+              <input
+                type="number"
+                step={0.5}
+                value={settings.max_token_text_ratio}
+                min={0.5}
+                max={50}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({
+                      ...prev,
+                      preset: "balanced",
+                      max_token_text_ratio: Number(e.target.value),
+                    }),
+                  )
+                }
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.use_cache}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({ ...prev, preset: "balanced", use_cache: e.target.checked }),
+                  )
+                }
+              />
+              Use cache (better continuity for long text)
+            </label>
+
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.use_phoneme}
+                onChange={e =>
+                  setSettings(prev =>
+                    normalizeSettings({
+                      ...prev,
+                      preset: "balanced",
+                      use_phoneme: e.target.checked,
+                    }),
+                  )
+                }
+              />
+              Enable phoneme-in (pronunciation control)
+            </label>
+          </div>
+        </div>
+      )}
 
       {error && <div className="error-message">{error}</div>}
 
