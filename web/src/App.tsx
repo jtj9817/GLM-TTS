@@ -13,7 +13,18 @@ interface ServerHealth {
 type SampleMethod = "ras" | "topk";
 
 type GenerationSettings = {
-  preset: "balanced" | "expressive" | "stable";
+  preset:
+    | "balanced"
+    | "expressive"
+    | "stable"
+    | "ultra_stable"
+    | "creative"
+    | "fast"
+    | "longform"
+    | "pronunciation"
+    | "low_repetition"
+    | "sensual"
+    | "custom";
   sample_method: SampleMethod;
   top_k: number;
   top_p: number;
@@ -61,6 +72,90 @@ const PRESET_STABLE: GenerationSettings = {
   temperature: 1.0,
   min_token_text_ratio: 2,
   max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_ULTRA_STABLE: GenerationSettings = {
+  preset: "ultra_stable",
+  sample_method: "topk",
+  top_k: 8,
+  top_p: 0.8,
+  temperature: 1.0,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_CREATIVE: GenerationSettings = {
+  preset: "creative",
+  sample_method: "ras",
+  top_k: 50,
+  top_p: 0.9,
+  temperature: 1.2,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 22,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_FAST: GenerationSettings = {
+  preset: "fast",
+  sample_method: "ras",
+  top_k: 20,
+  top_p: 0.8,
+  temperature: 1.0,
+  min_token_text_ratio: 1.5,
+  max_token_text_ratio: 12,
+  use_cache: false,
+  use_phoneme: false,
+};
+
+const PRESET_LONGFORM: GenerationSettings = {
+  preset: "longform",
+  sample_method: "ras",
+  top_k: 30,
+  top_p: 0.85,
+  temperature: 1.05,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 30,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_PRONUNCIATION: GenerationSettings = {
+  preset: "pronunciation",
+  sample_method: "ras",
+  top_k: 25,
+  top_p: 0.8,
+  temperature: 1.0,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: true,
+};
+
+const PRESET_LOW_REPETITION: GenerationSettings = {
+  preset: "low_repetition",
+  sample_method: "ras",
+  top_k: 30,
+  top_p: 0.75,
+  temperature: 1.0,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 20,
+  use_cache: true,
+  use_phoneme: false,
+};
+
+const PRESET_SENSUAL: GenerationSettings = {
+  preset: "sensual",
+  sample_method: "ras",
+  top_k: 35,
+  top_p: 0.9,
+  temperature: 1.1,
+  min_token_text_ratio: 2,
+  max_token_text_ratio: 22,
   use_cache: true,
   use_phoneme: false,
 };
@@ -295,13 +390,37 @@ export function App() {
                     ? PRESET_EXPRESSIVE
                     : preset === "stable"
                       ? PRESET_STABLE
-                      : PRESET_BALANCED;
+                      : preset === "ultra_stable"
+                        ? PRESET_ULTRA_STABLE
+                        : preset === "creative"
+                          ? PRESET_CREATIVE
+                          : preset === "fast"
+                            ? PRESET_FAST
+                            : preset === "longform"
+                              ? PRESET_LONGFORM
+                              : preset === "pronunciation"
+                                ? PRESET_PRONUNCIATION
+                                : preset === "low_repetition"
+                                  ? PRESET_LOW_REPETITION
+                                  : preset === "sensual"
+                                    ? PRESET_SENSUAL
+                                    : preset === "custom"
+                                      ? settings
+                                      : PRESET_BALANCED;
                 setSettings(normalizeSettings(next));
               }}
             >
               <option value="balanced">Balanced (default)</option>
-              <option value="expressive">More expressive</option>
-              <option value="stable">More stable</option>
+              <option value="expressive">Expressive (controlled)</option>
+              <option value="sensual">Sensual</option>
+              <option value="stable">Stable</option>
+              <option value="ultra_stable">Ultra stable</option>
+              <option value="longform">Long-form continuity</option>
+              <option value="fast">Fast / short output</option>
+              <option value="creative">High variation</option>
+              <option value="low_repetition">Low repetition</option>
+              <option value="pronunciation">Pronunciation control (phoneme-in)</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
 
@@ -313,7 +432,7 @@ export function App() {
                 setSettings(prev =>
                   normalizeSettings({
                     ...prev,
-                    preset: "balanced",
+                    preset: "custom",
                     sample_method: e.target.value as SampleMethod,
                   }),
                 )
@@ -333,7 +452,7 @@ export function App() {
               max={200}
               onChange={e =>
                 setSettings(prev =>
-                  normalizeSettings({ ...prev, preset: "balanced", top_k: Number(e.target.value) }),
+                  normalizeSettings({ ...prev, preset: "custom", top_k: Number(e.target.value) }),
                 )
               }
             />
@@ -351,7 +470,7 @@ export function App() {
                 disabled={settings.sample_method !== "ras"}
                 onChange={e =>
                   setSettings(prev =>
-                    normalizeSettings({ ...prev, preset: "balanced", top_p: Number(e.target.value) }),
+                    normalizeSettings({ ...prev, preset: "custom", top_p: Number(e.target.value) }),
                   )
                 }
               />
@@ -369,7 +488,7 @@ export function App() {
                   setSettings(prev =>
                     normalizeSettings({
                       ...prev,
-                      preset: "balanced",
+                      preset: "custom",
                       temperature: Number(e.target.value),
                     }),
                   )
@@ -391,7 +510,7 @@ export function App() {
                   setSettings(prev =>
                     normalizeSettings({
                       ...prev,
-                      preset: "balanced",
+                      preset: "custom",
                       min_token_text_ratio: Number(e.target.value),
                     }),
                   )
@@ -410,7 +529,7 @@ export function App() {
                   setSettings(prev =>
                     normalizeSettings({
                       ...prev,
-                      preset: "balanced",
+                      preset: "custom",
                       max_token_text_ratio: Number(e.target.value),
                     }),
                   )
@@ -426,7 +545,7 @@ export function App() {
                 checked={settings.use_cache}
                 onChange={e =>
                   setSettings(prev =>
-                    normalizeSettings({ ...prev, preset: "balanced", use_cache: e.target.checked }),
+                    normalizeSettings({ ...prev, preset: "custom", use_cache: e.target.checked }),
                   )
                 }
               />
@@ -441,7 +560,7 @@ export function App() {
                   setSettings(prev =>
                     normalizeSettings({
                       ...prev,
-                      preset: "balanced",
+                      preset: "custom",
                       use_phoneme: e.target.checked,
                     }),
                   )
