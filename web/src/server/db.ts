@@ -32,10 +32,23 @@ db.run(`
     audio_path TEXT NOT NULL,
     audio_mime TEXT NOT NULL,
     output_filename TEXT NOT NULL,
+    settings_json TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
   );
 `);
+
+// Lightweight schema migrations for existing DBs.
+// SQLite doesn't support IF NOT EXISTS for ADD COLUMN on all versions.
+for (const sql of [
+  "ALTER TABLE generations ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'",
+]) {
+  try {
+    db.run(sql);
+  } catch {
+    // ignore (e.g. duplicate column)
+  }
+}
 
 db.run(
   "CREATE INDEX IF NOT EXISTS idx_generations_session_created_at ON generations(session_id, created_at DESC);",

@@ -16,8 +16,35 @@ type GenerationRow = {
   audio_path: string;
   audio_mime: string;
   output_filename: string;
+  settings_json: string;
   created_at: number;
 };
+
+type GenerationSettings = Record<string, unknown>;
+
+function safeParseJsonObject(input: string): GenerationSettings {
+  try {
+    const v = JSON.parse(input) as unknown;
+    if (v && typeof v === "object" && !Array.isArray(v)) return v as GenerationSettings;
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function parseBool(v: FormDataEntryValue | null, defaultValue: boolean): boolean {
+  if (v == null) return defaultValue;
+  const s = String(v).trim().toLowerCase();
+  if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+  if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+  return defaultValue;
+}
+
+function parseNumber(v: FormDataEntryValue | null, defaultValue: number): number {
+  if (v == null) return defaultValue;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaultValue;
+}
 
 function withSession(
   req: Request,
@@ -97,6 +124,7 @@ const server = serve({
           created_at: r.created_at,
           audio_mime: r.audio_mime,
           output_filename: r.output_filename,
+          settings: safeParseJsonObject(r.settings_json),
           audio_url: `/api/generations/${r.id}/audio`,
         }));
 
@@ -142,6 +170,20 @@ const server = serve({
           const seedRaw = formData.get("seed");
           const seed = seedRaw == null ? null : Number(seedRaw);
 
+          const settings = {
+            preset: String(formData.get("preset") ?? "balanced"),
+            sample_method: String(formData.get("sample_method") ?? "ras"),
+            top_k: parseNumber(formData.get("top_k"), 25),
+            top_p: parseNumber(formData.get("top_p"), 0.8),
+            temperature: parseNumber(formData.get("temperature"), 1.0),
+            min_token_text_ratio: parseNumber(formData.get("min_token_text_ratio"), 2.0),
+            max_token_text_ratio: parseNumber(formData.get("max_token_text_ratio"), 20.0),
+            use_cache: parseBool(formData.get("use_cache"), true),
+            use_phoneme: parseBool(formData.get("use_phoneme"), false),
+          };
+
+          const settingsJson = JSON.stringify(settings);
+
           let upstream: Response;
           try {
             upstream = await fetch(`${PY_API_BASE}/synthesize`, {
@@ -180,9 +222,9 @@ const server = serve({
 
           db.query(
             `INSERT INTO generations (
-              id, session_id, input_text, reference_text, seed, audio_path, audio_mime, output_filename, created_at
+              id, session_id, input_text, reference_text, seed, audio_path, audio_mime, output_filename, settings_json, created_at
             ) VALUES (
-              $id, $session_id, $input_text, $reference_text, $seed, $audio_path, $audio_mime, $output_filename, $created_at
+              $id, $session_id, $input_text, $reference_text, $seed, $audio_path, $audio_mime, $output_filename, $settings_json, $created_at
             )`,
           ).run({
             id,
@@ -193,6 +235,7 @@ const server = serve({
             audio_path: audioPath,
             audio_mime: mime,
             output_filename: outputFilename,
+            settings_json: settingsJson,
             created_at: createdAt,
           });
 
@@ -205,6 +248,7 @@ const server = serve({
               created_at: createdAt,
               audio_mime: mime,
               output_filename: outputFilename,
+              settings,
               audio_url: `/api/generations/${id}/audio`,
             },
           });

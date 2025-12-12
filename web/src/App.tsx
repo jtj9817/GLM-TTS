@@ -94,6 +94,7 @@ type Generation = {
   audio_mime: string;
   output_filename: string;
   audio_url: string;
+  settings?: Partial<GenerationSettings>;
 };
 
 export function App() {
@@ -207,6 +208,7 @@ export function App() {
       formData.append("seed", seed.toString());
 
       const s = normalizeSettings(settings);
+      formData.append("preset", s.preset);
       formData.append("sample_method", s.sample_method);
       formData.append("top_k", String(s.top_k));
       formData.append("top_p", String(s.top_p));
@@ -537,6 +539,11 @@ export function App() {
                       {new Date(gen.created_at).toLocaleString()}
                     </div>
                     <div className="output-text">{gen.input_text}</div>
+                    {gen.settings && (
+                      <div className="output-time">
+                        Preset: {String(gen.settings.preset ?? "custom")} | {String(gen.settings.sample_method ?? "-")} | k={String(gen.settings.top_k ?? "-")}
+                      </div>
+                    )}
                   </div>
 
                   <audio
