@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./index.css";
 
-const API_BASE = "http://localhost:8049";
+const API_BASE = "";
 
 interface ServerHealth {
   status: string;
@@ -10,33 +10,47 @@ interface ServerHealth {
   speaker_cache_size: number;
 }
 
+type Generation = {
+  id: string;
+  input_text: string;
+  reference_text: string | null;
+  seed: number | null;
+  created_at: number;
+  audio_mime: string;
+  output_filename: string;
+  audio_url: string;
+};
+
 export function App() {
   const [referenceAudio, setReferenceAudio] = useState<File | null>(null);
+  const [referenceAudioUrl, setReferenceAudioUrl] = useState<string | null>(null);
   const [referenceText, setReferenceText] = useState("");
   const [inputText, setInputText] = useState("");
   const [seed, setSeed] = useState(42);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [outputAudioUrl, setOutputAudioUrl] = useState<string | null>(null);
-  const [outputFilename, setOutputFilename] = useState<string>("synthesized.wav");
+  const [generations, setGenerations] = useState<Generation[]>([]);
   const [serverStatus, setServerStatus] = useState<ServerHealth | null>(null);
   const [statusChecked, setStatusChecked] = useState(false);
   
   const audioInputRef = useRef<HTMLInputElement>(null);
 
-  const generateFilename = (): string => {
-    const now = new Date();
-    const dateStr = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
-    const hash = Array.from(dateStr)
-      .reduce((acc, char) => ((acc << 5) - acc + char.charCodeAt(0)) | 0, 0)
-      .toString(16)
-      .replace("-", "");
-    return `glmtts_synth_${hash}.wav`;
-  };
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/generations`);
+        if (!response.ok) return;
+        const data = (await response.json()) as { generations: Generation[] };
+        setGenerations(Array.isArray(data.generations) ? data.generations : []);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   const checkServerHealth = async () => {
     try {
-      const response = await fetch(`${API_BASE}/health`);
+      const response = await fetch(`${API_BASE}/api/health`);
       if (response.ok) {
         const data = await response.json();
         setServerStatus(data);
@@ -56,9 +70,20 @@ export function App() {
     const file = e.target.files?.[0];
     if (file) {
       setReferenceAudio(file);
+      const nextUrl = URL.createObjectURL(file);
+      setReferenceAudioUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return nextUrl;
+      });
       setError(null);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (referenceAudioUrl) URL.revokeObjectURL(referenceAudioUrl);
+    };
+  }, [referenceAudioUrl]);
 
   const handleSynthesize = async () => {
     if (!referenceAudio) {
@@ -80,25 +105,19 @@ export function App() {
       formData.append("speaker_text", referenceText);
       formData.append("seed", seed.toString());
 
-      const response = await fetch(`${API_BASE}/synthesize`, {
+      const response = await fetch(`${API_BASE}/api/synthesize`, {
         method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = (await response.json().catch(() => ({}))) as { detail?: string };
         throw new Error(errorData.detail || `Server error: ${response.status}`);
       }
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      if (outputAudioUrl) {
-        URL.revokeObjectURL(outputAudioUrl);
-      }
-      
-      setOutputAudioUrl(audioUrl);
-      setOutputFilename(generateFilename());
+      const data = (await response.json()) as { generation?: Generation };
+      if (!data.generation) throw new Error("Invalid server response");
+      setGenerations(prev => [data.generation!, ...prev]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Synthesis failed");
     } finally {
@@ -108,7 +127,7 @@ export function App() {
 
   const handleClearCache = async () => {
     try {
-      const response = await fetch(`${API_BASE}/clear_cache`);
+      const response = await fetch(`${API_BASE}/api/clear_cache`);
       if (response.ok) {
         const data = await response.json();
         alert(data.message);
@@ -159,10 +178,13 @@ export function App() {
                 {referenceAudio ? referenceAudio.name : "Choose audio file..."}
               </label>
             </div>
-            {referenceAudio && (
-              <audio controls className="audio-preview">
-                <source src={URL.createObjectURL(referenceAudio)} />
-              </audio>
+            {referenceAudioUrl && (
+              <audio
+                controls
+                className="audio-preview"
+                src={referenceAudioUrl}
+                onError={() => setError("Reference audio failed to load/play. Try a different file/format.")}
+              />
             )}
           </div>
 
@@ -212,21 +234,36 @@ export function App() {
 
         <div className="panel output-panel">
           <h2>Output</h2>
-          
-          {outputAudioUrl ? (
+
+          {generations.length > 0 ? (
             <div className="output-audio">
-              <audio controls autoPlay={false} className="audio-player">
-                <source src={outputAudioUrl} type="audio/wav" />
-                Your browser does not support the audio element.
-              </audio>
-              <a href={outputAudioUrl} download={outputFilename} className="download-btn">
-                Download WAV
-              </a>
+              {generations.map(gen => (
+                <div key={gen.id} className="output-item">
+                  <div className="output-meta">
+                    <div className="output-time">
+                      {new Date(gen.created_at).toLocaleString()}
+                    </div>
+                    <div className="output-text">{gen.input_text}</div>
+                  </div>
+
+                  <audio
+                    controls
+                    className="audio-player"
+                    src={gen.audio_url}
+                    onError={() => setError("Audio failed to load/play. Check server logs and audio format.")}
+                  />
+                  <a
+                    href={gen.audio_url}
+                    download={gen.output_filename}
+                    className="download-btn"
+                  >
+                    Download
+                  </a>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="placeholder">
-              Generated audio will appear here
-            </div>
+            <div className="placeholder">Generated audio will appear here</div>
           )}
         </div>
       </div>

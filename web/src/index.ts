@@ -1,32 +1,218 @@
 import { serve } from "bun";
 import index from "./index.html";
 
+import { db } from "./server/db";
+import { getOrCreateSession, sessionSetCookieHeader } from "./server/session";
+import { audioPathForId, defaultFilename, extForMime } from "./server/storage";
+
+const PY_API_BASE = process.env.GLMTTS_API_BASE ?? "http://localhost:8049";
+
+type GenerationRow = {
+  id: string;
+  session_id: string;
+  input_text: string;
+  reference_text: string | null;
+  seed: number | null;
+  audio_path: string;
+  audio_mime: string;
+  output_filename: string;
+  created_at: number;
+};
+
+function withSession(
+  req: Request,
+  handler: (sessionId: string) => Response | Promise<Response>,
+): Response | Promise<Response> {
+  const session = getOrCreateSession(req);
+  const maybePromise = handler(session.id);
+
+  const wrap = (res: Response): Response => {
+    if (!session.isNew) return res;
+    const headers = new Headers(res.headers);
+    headers.append("Set-Cookie", sessionSetCookieHeader(session.id));
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  };
+
+  return maybePromise instanceof Promise ? maybePromise.then(wrap) : wrap(maybePromise);
+}
+
+function jsonError(message: string, status = 400): Response {
+  return Response.json({ detail: message }, { status });
+}
+
 const server = serve({
   routes: {
+    "/api/health": req =>
+      withSession(req, async () => {
+        try {
+          const upstream = await fetch(`${PY_API_BASE}/health`);
+          const text = await upstream.text();
+          return new Response(text, {
+            status: upstream.status,
+            headers: {
+              "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+            },
+          });
+        } catch {
+          return jsonError(
+            `Cannot connect to TTS server at ${PY_API_BASE}. Set GLMTTS_API_BASE or start the server.`,
+            503,
+          );
+        }
+      }),
+
+    "/api/clear_cache": req =>
+      withSession(req, async () => {
+        try {
+          const upstream = await fetch(`${PY_API_BASE}/clear_cache`);
+          const text = await upstream.text();
+          return new Response(text, {
+            status: upstream.status,
+            headers: {
+              "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+            },
+          });
+        } catch {
+          return jsonError("Failed to reach TTS server.", 503);
+        }
+      }),
+
+    "/api/generations": req =>
+      withSession(req, sessionId => {
+        const rows = db
+          .query<GenerationRow, { sessionId: string }>(
+            "SELECT * FROM generations WHERE session_id = $sessionId ORDER BY created_at DESC",
+          )
+          .all({ sessionId });
+
+        const generations = rows.map(r => ({
+          id: r.id,
+          input_text: r.input_text,
+          reference_text: r.reference_text,
+          seed: r.seed,
+          created_at: r.created_at,
+          audio_mime: r.audio_mime,
+          output_filename: r.output_filename,
+          audio_url: `/api/generations/${r.id}/audio`,
+        }));
+
+        return Response.json({ generations });
+      }),
+
+    "/api/generations/:id/audio": req =>
+      withSession(req, async sessionId => {
+        const id = req.params.id;
+        const row = db
+          .query<Pick<GenerationRow, "audio_path" | "audio_mime" | "output_filename">, { id: string; sessionId: string }>(
+            "SELECT audio_path, audio_mime, output_filename FROM generations WHERE id = $id AND session_id = $sessionId",
+          )
+          .get({ id, sessionId });
+
+        if (!row) return jsonError("Audio not found", 404);
+
+        const file = Bun.file(row.audio_path);
+        const exists = await file.exists();
+        if (!exists) return jsonError("Audio file missing on disk", 404);
+        return new Response(file, {
+          headers: {
+            "Content-Type": row.audio_mime,
+            "Content-Disposition": `inline; filename=\"${row.output_filename}\"`,
+            "Cache-Control": "no-store",
+          },
+        });
+      }),
+
+    "/api/synthesize": {
+      POST: req =>
+        withSession(req, async sessionId => {
+          let formData: FormData;
+          try {
+            formData = await req.formData();
+          } catch {
+            return jsonError("Invalid form data", 400);
+          }
+
+          const inputText = String(formData.get("text") ?? "");
+          if (!inputText.trim()) return jsonError("Missing 'text'", 400);
+
+          const seedRaw = formData.get("seed");
+          const seed = seedRaw == null ? null : Number(seedRaw);
+
+          let upstream: Response;
+          try {
+            upstream = await fetch(`${PY_API_BASE}/synthesize`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch {
+            return jsonError("Failed to reach TTS server.", 503);
+          }
+
+          if (!upstream.ok) {
+            const contentType = upstream.headers.get("content-type") ?? "";
+            if (contentType.includes("application/json")) {
+              const payload = await upstream.json().catch(() => ({}));
+              return Response.json(payload, { status: upstream.status });
+            }
+            const text = await upstream.text().catch(() => "TTS server error");
+            return jsonError(text, upstream.status);
+          }
+
+          let mime = (upstream.headers.get("content-type") ?? "audio/wav").split(";")[0]!.trim();
+          if (!mime.startsWith("audio/")) mime = "audio/wav";
+
+          const ext = extForMime(mime);
+          const id = crypto.randomUUID();
+          const outputFilename = defaultFilename(id, ext);
+          const audioPath = audioPathForId(id, ext);
+
+          const audioBytes = new Uint8Array(await upstream.arrayBuffer());
+          if (audioBytes.byteLength === 0) return jsonError("TTS server returned empty audio", 502);
+
+          await Bun.write(audioPath, audioBytes);
+
+          const referenceText = formData.get("speaker_text");
+          const createdAt = Date.now();
+
+          db.query(
+            `INSERT INTO generations (
+              id, session_id, input_text, reference_text, seed, audio_path, audio_mime, output_filename, created_at
+            ) VALUES (
+              $id, $session_id, $input_text, $reference_text, $seed, $audio_path, $audio_mime, $output_filename, $created_at
+            )`,
+          ).run({
+            id,
+            session_id: sessionId,
+            input_text: inputText,
+            reference_text: referenceText == null ? null : String(referenceText),
+            seed: Number.isFinite(seed) ? seed : null,
+            audio_path: audioPath,
+            audio_mime: mime,
+            output_filename: outputFilename,
+            created_at: createdAt,
+          });
+
+          return Response.json({
+            generation: {
+              id,
+              input_text: inputText,
+              reference_text: referenceText == null ? null : String(referenceText),
+              seed: Number.isFinite(seed) ? seed : null,
+              created_at: createdAt,
+              audio_mime: mime,
+              output_filename: outputFilename,
+              audio_url: `/api/generations/${id}/audio`,
+            },
+          });
+        }),
+    },
+
     // Serve index.html for all unmatched routes.
     "/*": index,
-
-    "/api/hello": {
-      async GET(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "GET",
-        });
-      },
-      async PUT(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "PUT",
-        });
-      },
-    },
-
-    "/api/hello/:name": async req => {
-      const name = req.params.name;
-      return Response.json({
-        message: `Hello, ${name}!`,
-      });
-    },
   },
 
   development: process.env.NODE_ENV !== "production" && {
