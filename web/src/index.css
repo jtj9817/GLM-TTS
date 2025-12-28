@@ -780,3 +780,184 @@ label.checkbox input[type="checkbox"] {
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+.btn-primary {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #5a6fd6;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.generation-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.queue-add-btn {
+  width: 100%;
+}
+
+/* Phase 5: Generation Queue */
+.generation-queue {
+  grid-column: 1 / -1;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.queue-stats {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.stat-badge.pending {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.stat-badge.completed {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.stat-badge.failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.queue-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.queue-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.queue-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #9ca3af;
+}
+
+.queue-item {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.queue-item-pending {
+  border-left: 3px solid #60a5fa;
+}
+
+.queue-item-processing {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.queue-item-completed {
+  border-left: 3px solid #4ade80;
+  opacity: 0.7;
+}
+
+.queue-item-failed {
+  border-left: 3px solid #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.queue-item-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.queue-status-icon {
+  font-size: 1.5rem;
+}
+
+.queue-status-text {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.queue-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-text {
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-meta {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.queue-error {
+  font-size: 0.8rem;
+  color: #f87171;
+  margin-top: 0.25rem;
+}
+
+.queue-item-actions {
+  display: flex;
+  gap: 0.5rem;
+}

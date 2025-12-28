@@ -1,44 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import JSZip from "jszip";
 import "./index.css";
-import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
 import { StorageManager } from "./components/StorageManager";
-import type { ReferenceAudioEntry } from "./types";
+import { GenerationQueue } from "./components/GenerationQueue";
+import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
+import { useQueue } from "./hooks/useQueue";
+import type {
+  Generation,
+  GenerationSettings,
+  ReferenceAudioEntry,
+  SampleMethod,
+  ServerHealth,
+} from "./types";
 
 const API_BASE = "";
-
-interface ServerHealth {
-  status: string;
-  device: string;
-  fp16: boolean;
-  speaker_cache_size: number;
-}
-
-type SampleMethod = "ras" | "topk";
-
-type GenerationSettings = {
-  preset:
-    | "balanced"
-    | "expressive"
-    | "stable"
-    | "ultra_stable"
-    | "creative"
-    | "fast"
-    | "longform"
-    | "pronunciation"
-    | "low_repetition"
-    | "sensual"
-    | "asmr"
-    | "custom";
-  sample_method: SampleMethod;
-  top_k: number;
-  top_p: number;
-  temperature: number;
-  min_token_text_ratio: number;
-  max_token_text_ratio: number;
-  use_cache: boolean;
-  use_phoneme: boolean;
-};
 
 const SETTINGS_STORAGE_KEY = "glmtts_settings_v1";
 
@@ -270,17 +245,49 @@ function isAudioFile(file: File): boolean {
   return !file.type || file.type.startsWith("audio/");
 }
 
-type Generation = {
-  id: string;
-  input_text: string;
-  reference_text: string | null;
-  seed: number | null;
-  created_at: number;
-  audio_mime: string;
-  output_filename: string;
-  audio_url: string;
-  settings?: Partial<GenerationSettings>;
+type SynthesisPayload = {
+  text: string;
+  referenceAudio: File;
+  referenceText: string;
+  seed: number;
+  settings: GenerationSettings;
 };
+
+function buildSynthesisFormData(payload: SynthesisPayload): FormData {
+  const formData = new FormData();
+  formData.append("text", payload.text);
+  formData.append("speaker_audio", payload.referenceAudio);
+  formData.append("speaker_text", payload.referenceText);
+  formData.append("seed", payload.seed.toString());
+
+  const s = normalizeSettings(payload.settings);
+  formData.append("preset", s.preset);
+  formData.append("sample_method", s.sample_method);
+  formData.append("top_k", String(s.top_k));
+  formData.append("top_p", String(s.top_p));
+  formData.append("temperature", String(s.temperature));
+  formData.append("min_token_text_ratio", String(s.min_token_text_ratio));
+  formData.append("max_token_text_ratio", String(s.max_token_text_ratio));
+  formData.append("use_cache", String(s.use_cache));
+  formData.append("use_phoneme", String(s.use_phoneme));
+  return formData;
+}
+
+async function synthesize(payload: SynthesisPayload): Promise<Generation> {
+  const response = await fetch(`${API_BASE}/api/synthesize`, {
+    method: "POST",
+    body: buildSynthesisFormData(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = (await response.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(errorData.detail || `Server error: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { generation?: Generation };
+  if (!data.generation) throw new Error("Invalid server response");
+  return data.generation;
+}
 
 export function App() {
   const [referenceAudio, setReferenceAudio] = useState<File | null>(null);
@@ -313,6 +320,18 @@ export function App() {
       return PRESET_BALANCED;
     }
   });
+
+  const {
+    queue,
+    isProcessing: isQueueProcessing,
+    currentItem,
+    addToQueue,
+    removeFromQueue,
+    clearCompleted,
+    clearAll,
+    processQueue,
+    retryFailed,
+  } = useQueue();
   
   const audioInputRef = useRef<HTMLInputElement>(null);
   const outputPanelRef = useRef<HTMLDivElement>(null);
@@ -531,41 +550,62 @@ export function App() {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("text", inputText);
-      formData.append("speaker_audio", referenceAudio);
-      formData.append("speaker_text", referenceText);
-      formData.append("seed", seed.toString());
-
-      const s = normalizeSettings(settings);
-      formData.append("preset", s.preset);
-      formData.append("sample_method", s.sample_method);
-      formData.append("top_k", String(s.top_k));
-      formData.append("top_p", String(s.top_p));
-      formData.append("temperature", String(s.temperature));
-      formData.append("min_token_text_ratio", String(s.min_token_text_ratio));
-      formData.append("max_token_text_ratio", String(s.max_token_text_ratio));
-      formData.append("use_cache", String(s.use_cache));
-      formData.append("use_phoneme", String(s.use_phoneme));
-
-      const response = await fetch(`${API_BASE}/api/synthesize`, {
-        method: "POST",
-        body: formData,
+      const generation = await synthesize({
+        text: inputText,
+        referenceAudio,
+        referenceText,
+        seed,
+        settings,
       });
-
-      if (!response.ok) {
-        const errorData = (await response.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(errorData.detail || `Server error: ${response.status}`);
-      }
-
-      const data = (await response.json()) as { generation?: Generation };
-      if (!data.generation) throw new Error("Invalid server response");
-      setGenerations(prev => [data.generation!, ...prev]);
+      setGenerations(prev => [generation, ...prev]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Synthesis failed");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAddToQueue = () => {
+    if (!referenceAudio) {
+      setError("Please upload a reference audio file");
+      return;
+    }
+    if (!inputText.trim()) {
+      setError("Please enter text to synthesize");
+      return;
+    }
+
+    addToQueue({
+      text: inputText,
+      referenceAudioId: referenceAudio.name,
+      referenceAudioFile: referenceAudio,
+      referenceTranscript: referenceText,
+      settings: normalizeSettings(settings),
+      seed,
+    });
+
+    setInputText("");
+    setError(null);
+  };
+
+  const handleProcessQueue = async () => {
+    await processQueue(async item => {
+      const referenceAudioFile = item.referenceAudioFile ?? referenceAudio;
+      if (!referenceAudioFile) {
+        throw new Error("Missing reference audio for queued item");
+      }
+
+      const generation = await synthesize({
+        text: item.text,
+        referenceAudio: referenceAudioFile,
+        referenceText: item.referenceTranscript,
+        seed: item.seed,
+        settings: item.settings,
+      });
+
+      setGenerations(prev => [generation, ...prev]);
+      return { id: generation.id };
+    });
   };
 
   const handleClearCache = async () => {
@@ -1070,14 +1110,35 @@ export function App() {
             </div>
           </div>
 
-          <button 
-            onClick={handleSynthesize} 
-            disabled={isLoading || !referenceAudio || !inputText.trim()}
-            className="generate-btn"
-          >
-            {isLoading ? "Generating..." : "Generate Speech"}
-          </button>
+          <div className="generation-actions">
+            <button 
+              onClick={handleSynthesize} 
+              disabled={isLoading || !referenceAudio || !inputText.trim()}
+              className="generate-btn"
+            >
+              {isLoading ? "Generating..." : "Generate Speech"}
+            </button>
+            <button
+              onClick={handleAddToQueue}
+              className="btn-secondary queue-add-btn"
+              disabled={!referenceAudio || !inputText.trim()}
+              type="button"
+            >
+              ➕ Add to Queue
+            </button>
+          </div>
         </div>
+
+        <GenerationQueue
+          queue={queue}
+          isProcessing={isQueueProcessing}
+          currentItem={currentItem}
+          onRemove={removeFromQueue}
+          onProcess={handleProcessQueue}
+          onClearCompleted={clearCompleted}
+          onClearAll={clearAll}
+          onRetryFailed={retryFailed}
+        />
 
         <div className="panel output-panel" ref={outputPanelRef}>
           <h2>Output</h2>
