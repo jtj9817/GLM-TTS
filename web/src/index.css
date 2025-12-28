@@ -1328,6 +1328,30 @@ label.checkbox input[type="checkbox"] {
   border-color: #667eea;
 }
 
+.format-loading {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+}
+
+.format-loading::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 0.5rem;
+  border: 2px solid rgba(102, 126, 234, 0.3);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .convert-btn {
   padding: 0.5rem 0.75rem;
   background: rgba(168, 85, 247, 0.2);

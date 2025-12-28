@@ -171,6 +171,21 @@ const PRESET_DESCRIPTIONS: Record<GenerationSettings["preset"], string> = {
   custom: "Manual settings override. Adjust the controls below.",
 };
 
+const PRESET_VALUES: Record<GenerationSettings["preset"], GenerationSettings> = {
+  balanced: PRESET_BALANCED,
+  expressive: PRESET_EXPRESSIVE,
+  stable: PRESET_STABLE,
+  ultra_stable: PRESET_ULTRA_STABLE,
+  creative: PRESET_CREATIVE,
+  fast: PRESET_FAST,
+  longform: PRESET_LONGFORM,
+  pronunciation: PRESET_PRONUNCIATION,
+  low_repetition: PRESET_LOW_REPETITION,
+  sensual: PRESET_SENSUAL,
+  asmr: PRESET_ASMR,
+  custom: PRESET_BALANCED, // Will be replaced with current settings in handler
+};
+
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -577,14 +592,19 @@ export function App() {
     if (file) setReferenceAudioFile(file);
   };
 
+  // Helper to check if drag event contains file types
+  const hasFiles = (e: React.DragEvent): boolean => {
+    return Array.from(e.dataTransfer.types).includes("Files");
+  };
+
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    if (!hasFiles(e)) return;
     e.preventDefault();
     setIsDragActive(true);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    if (!hasFiles(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
     setIsDragActive(true);
@@ -597,7 +617,7 @@ export function App() {
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    if (!hasFiles(e)) return;
     e.preventDefault();
     setIsDragActive(false);
     const file = e.dataTransfer.files?.[0];
@@ -715,7 +735,10 @@ export function App() {
   };
 
   const handleExport = async (gen: Generation) => {
-    if (exportingId) return;
+    if (exportingId) {
+      setError("Please wait for the current export to finish");
+      return;
+    }
     setExportingId(gen.id);
     setError(null);
 
@@ -757,7 +780,8 @@ export function App() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(zipUrl);
+      // Delay URL revocation to ensure download starts
+      setTimeout(() => URL.revokeObjectURL(zipUrl), 1000);
     } catch (e) {
       setError(`Export failed: ${e instanceof Error ? e.message : "Unknown error"}`);
     } finally {
@@ -805,30 +829,8 @@ export function App() {
               title={PRESET_DESCRIPTIONS[settings.preset]}
               onChange={e => {
                 const preset = e.target.value as GenerationSettings["preset"];
-                const next =
-                  preset === "expressive"
-                    ? PRESET_EXPRESSIVE
-                    : preset === "stable"
-                      ? PRESET_STABLE
-                      : preset === "ultra_stable"
-                        ? PRESET_ULTRA_STABLE
-                        : preset === "creative"
-                          ? PRESET_CREATIVE
-                          : preset === "fast"
-                            ? PRESET_FAST
-                            : preset === "longform"
-                              ? PRESET_LONGFORM
-                              : preset === "pronunciation"
-                                ? PRESET_PRONUNCIATION
-                                : preset === "low_repetition"
-                                  ? PRESET_LOW_REPETITION
-                                  : preset === "sensual"
-                                    ? PRESET_SENSUAL
-                                    : preset === "asmr"
-                                      ? PRESET_ASMR
-                                      : preset === "custom"
-                                        ? settings
-                                        : PRESET_BALANCED;
+                // Use PRESET_VALUES lookup for all named presets; custom keeps current settings
+                const next = preset === "custom" ? settings : PRESET_VALUES[preset];
                 setSettings(normalizeSettings(next));
               }}
             >
@@ -1140,7 +1142,7 @@ export function App() {
               />
               <button
                 type="button"
-                onClick={() => setSeed(Math.floor(Math.random() * 1000000))}
+                onClick={() => setSeed(Math.floor(Math.random() * 999999))}
                 className="btn-icon"
                 title="Generate random seed"
               >
@@ -1242,10 +1244,15 @@ export function App() {
                       type="button"
                       onClick={() => handleExport(gen)}
                       className="export-btn"
-                      disabled={exportingId !== null}
+                      disabled={exportingId === gen.id}
                     >
                       {exportingId === gen.id ? "Exporting..." : "📦 Export + Settings"}
                     </button>
+                    {ffmpegLoading && !ffmpegLoaded && (
+                      <span className="format-loading" title="Loading audio converter...">
+                        Loading converter...
+                      </span>
+                    )}
                     {ffmpegLoaded && (
                       <select
                         value={selectedFormat}
