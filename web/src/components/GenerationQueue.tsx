@@ -4,6 +4,7 @@ interface Props {
   queue: QueueItem[];
   isProcessing: boolean;
   currentItem: QueueItem | null;
+  apiBase?: string;
   onRemove: (id: string) => void;
   onProcess: () => void;
   onClearCompleted: () => void;
@@ -15,6 +16,7 @@ export function GenerationQueue({
   queue,
   isProcessing,
   currentItem,
+  apiBase = "",
   onRemove,
   onProcess,
   onClearCompleted,
@@ -103,7 +105,7 @@ export function GenerationQueue({
                 )}
                 {item.status === "completed" && item.resultId && (
                   <a
-                    href={`/api/generations/${item.resultId}/audio`}
+                    href={`${apiBase}/api/generations/${item.resultId}/audio`}
                     download
                     className="btn-icon"
                     title="Download audio"

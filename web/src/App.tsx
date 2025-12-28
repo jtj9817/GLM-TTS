@@ -1133,6 +1133,7 @@ export function App() {
           queue={queue}
           isProcessing={isQueueProcessing}
           currentItem={currentItem}
+          apiBase={API_BASE}
           onRemove={removeFromQueue}
           onProcess={handleProcessQueue}
           onClearCompleted={clearCompleted}
