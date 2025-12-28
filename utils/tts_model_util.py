@@ -11,11 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
+import sys
 import torch
 import numpy as np
 from typing import List, Tuple, Generator, Optional, Union
 from utils.vocos_util import load_vocos_jit
 from utils.hift_util import load_hift
+
+# Configure module-level logger with explicit handler to ensure visibility
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 class Token2Wav:
     def __init__(self, flow, sample_rate: int = 24000, device: str = "cuda"):
@@ -207,6 +217,9 @@ class Token2Wav:
         elif not isinstance(token_bt, torch.Tensor):
              raise ValueError(f"Unsupported token_bt type: {type(token_bt)}")
 
+        token_count = token_bt.shape[1] if token_bt.dim() > 1 else len(token_bt)
+        logger.info(f"[Token2Wav] Starting conversion: {token_count} tokens, {n_timesteps} diffusion steps")
+
         assert prompt_token.shape[1] != 0 and prompt_feat.shape[1] != 0
         mel, _ = self.flow.inference_with_cache(
             token=token_bt.to(self.device),
@@ -215,8 +228,12 @@ class Token2Wav:
             embedding=embedding.to(self.device),
             n_timesteps=n_timesteps,
         )
-        
+
+        logger.info(f"[Vocoder] Converting mel-spectrogram to audio")
         wav = self.vocoder(mel)
+
+        audio_duration = wav.shape[-1] / self.sample_rate
+        logger.info(f"[Token2Wav] Conversion complete: {audio_duration:.2f}s of audio generated")
 
         return wav, mel
 

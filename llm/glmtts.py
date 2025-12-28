@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import logging
+import sys
 import yaml
 from typing import Union, Optional, List, Dict, Any
 import torch
@@ -20,6 +21,14 @@ import torch.nn as nn
 from transformers import LlamaConfig, LlamaForCausalLM
 from peft import LoraConfig, get_peft_model, TaskType
 from cosyvoice.utils import common
+
+# Configure module-level logger with explicit handler to ensure visibility
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 class GLMTTS(nn.Module):
@@ -256,7 +265,7 @@ class GLMTTS(nn.Module):
             # Log progress periodically
             if i > 0 and i % LOG_INTERVAL == 0:
                 progress_pct = min(100, int((i / max_len) * 100))
-                logging.info(f"[LLM] Generating tokens: {i}/{max_len} ({progress_pct}%)")
+                logger.info(f"[LLM] Generating tokens: {i}/{max_len} ({progress_pct}%)")
 
             model_input = {
                 "inputs_embeds": inputs_embeds,
@@ -306,7 +315,7 @@ class GLMTTS(nn.Module):
             inputs_embeds = self.llama_embedding(torch.LongTensor([top_ids]).to(device))[None]
 
         # Log completion
-        logging.info(f"[LLM] Token generation complete: {len(out_tokens)} tokens generated")
+        logger.info(f"[LLM] Token generation complete: {len(out_tokens)} tokens generated")
 
         # 5. Validation and Output Construction
         # Ensure all tokens are within the valid audio token range

@@ -17,10 +17,19 @@ Manages the DiT model initialization and the ODE sampling process.
 """
 
 import logging
+import sys
 import torch
 from torch.nn import functional as F
 from cosyvoice.utils.mask import make_pad_mask
 from flow.dit import DiT
+
+# Configure module-level logger with explicit handler to ensure visibility
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 class Flow(torch.nn.Module):
@@ -198,11 +207,11 @@ class Flow(torch.nn.Module):
 
         sol = []
         total_steps = len(t_span) - 1
-        logging.info(f"[Flow] Starting denoising: {total_steps} steps")
+        logger.info(f"[Flow] Starting denoising: {total_steps} steps")
 
         # Iterative Denoising (Euler method)
         for step in range(1, len(t_span)):
-            logging.info(f"[Flow] Denoising step {step}/{total_steps}")
+            logger.info(f"[Flow] Denoising step {step}/{total_steps}")
             # Apply cache if available (Overwriting the beginning of the sequence)
             if last_step_cache is not None:
                 x_cache = last_step_cache[step]['x']
@@ -264,6 +273,6 @@ class Flow(torch.nn.Module):
             if step < len(t_span) - 1:
                 dt = t_span[step + 1] - t_current
 
-        logging.info(f"[Flow] Denoising complete")
+        logger.info(f"[Flow] Denoising complete")
         result_btd = sol[-1]
         return result_btd, current_step2cache
