@@ -1,4 +1,5 @@
 import { serve } from "bun";
+import path from "node:path";
 import index from "./index.html";
 
 import { db, DB_PATH } from "./server/db";
@@ -6,6 +7,8 @@ import { getOrCreateSession, sessionSetCookieHeader } from "./server/session";
 import { audioPathForId, defaultFilename, extForMime } from "./server/storage";
 
 const PY_API_BASE = process.env.GLMTTS_API_BASE ?? "http://localhost:8049";
+const FFMPEG_DIR = path.join(import.meta.dir, "..", "node_modules", "@ffmpeg", "ffmpeg", "dist", "esm");
+const FFMPEG_CORE_DIR = path.join(import.meta.dir, "..", "node_modules", "@ffmpeg", "core", "dist", "umd");
 
 type GenerationRow = {
   id: string;
@@ -44,6 +47,25 @@ function parseNumber(v: FormDataEntryValue | null, defaultValue: number): number
   if (v == null) return defaultValue;
   const n = Number(v);
   return Number.isFinite(n) ? n : defaultValue;
+}
+
+function contentTypeForFile(filePath: string): string {
+  if (filePath.endsWith(".wasm")) return "application/wasm";
+  if (filePath.endsWith(".js")) return "text/javascript";
+  if (filePath.endsWith(".json")) return "application/json";
+  return "application/octet-stream";
+}
+
+async function serveFile(filePath: string): Promise<Response> {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) {
+    return new Response("Not found", { status: 404 });
+  }
+  return new Response(file, {
+    headers: {
+      "Content-Type": contentTypeForFile(filePath),
+    },
+  });
 }
 
 function withSession(
@@ -484,6 +506,14 @@ const server = serve({
           return Response.json({ success: true });
         }),
     },
+
+    "/ffmpeg/worker.js": () => serveFile(path.join(FFMPEG_DIR, "worker.js")),
+    "/ffmpeg/const.js": () => serveFile(path.join(FFMPEG_DIR, "const.js")),
+    "/ffmpeg/errors.js": () => serveFile(path.join(FFMPEG_DIR, "errors.js")),
+    "/ffmpeg/ffmpeg-core.js": () => serveFile(path.join(FFMPEG_CORE_DIR, "ffmpeg-core.js")),
+    "/ffmpeg/ffmpeg-core.wasm": () => serveFile(path.join(FFMPEG_CORE_DIR, "ffmpeg-core.wasm")),
+    "/ffmpeg/ffmpeg-core.worker.js": () =>
+      serveFile(path.join(FFMPEG_CORE_DIR, "ffmpeg-core.worker.js")),
 
     // Serve index.html for all unmatched routes.
     "/*": index,

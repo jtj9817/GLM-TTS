@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { toBlobURL } from "@ffmpeg/util";
 
 type ConversionFormat = "wav" | "mp3" | "flac" | "ogg";
 
@@ -34,12 +34,14 @@ export function useAudioConverter() {
             console.log(`FFmpeg progress: ${Math.round(progress * 100)}%`);
           });
 
-          // Load the core from CDN
-          const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+          const origin = window.location.origin;
+          const baseURL = new URL("/ffmpeg", origin).toString();
 
           await ffmpeg.load({
+            classWorkerURL: new URL("/ffmpeg/worker.js", origin).toString(),
             coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
             wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+            workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, "text/javascript"),
           });
 
           ffmpegRef.current = ffmpeg;
