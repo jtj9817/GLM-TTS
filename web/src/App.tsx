@@ -393,7 +393,6 @@ export function App() {
     ready: dbReady,
   } = useReferenceAudioDB();
   const [savedReferenceAudios, setSavedReferenceAudios] = useState<ReferenceAudioEntry[]>([]);
-  const [showLibrary, setShowLibrary] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
   const [waveformEnabled, setWaveformEnabled] = useState(() => {
@@ -525,7 +524,7 @@ export function App() {
       return nextUrl;
     });
 
-    setShowLibrary(false);
+    setShowLibraryModal(false);
     setError(null);
   };
 
