@@ -177,6 +177,21 @@ const PRESET_ASMR: GenerationSettings = {
   use_phoneme: true,  // Enable for precise phoneme control
 };
 
+const PRESET_DESCRIPTIONS: Record<GenerationSettings["preset"], string> = {
+  balanced: "Best all-round default. Good stability with natural variation.",
+  expressive: "Adds controlled emotion and dynamics without going wild.",
+  stable: "Lower variance for steadier, more predictable delivery.",
+  ultra_stable: "Most deterministic output. Great for consistency.",
+  creative: "Higher variation for more expressive, surprising takes.",
+  fast: "Shorter outputs and quicker processing at the cost of richness.",
+  longform: "Better continuity for long passages and narration.",
+  pronunciation: "Enables phoneme input for precise pronunciation control.",
+  low_repetition: "Reduces loops and repeated phrases in output.",
+  sensual: "Warmer, breathier tone with softer dynamics.",
+  asmr: "Intimate, close-mic style with delicate articulation.",
+  custom: "Manual settings override. Adjust the controls below.",
+};
+
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -673,6 +688,7 @@ export function App() {
             <label>Preset</label>
             <select
               value={settings.preset}
+              title={PRESET_DESCRIPTIONS[settings.preset]}
               onChange={e => {
                 const preset = e.target.value as GenerationSettings["preset"];
                 const next =
@@ -702,19 +718,46 @@ export function App() {
                 setSettings(normalizeSettings(next));
               }}
             >
-              <option value="balanced">Balanced (default)</option>
-              <option value="expressive">Expressive (controlled)</option>
-              <option value="sensual">Sensual</option>
-              <option value="asmr">ASMR / Intimate</option>
-              <option value="stable">Stable</option>
-              <option value="ultra_stable">Ultra stable</option>
-              <option value="longform">Long-form continuity</option>
-              <option value="fast">Fast / short output</option>
-              <option value="creative">High variation</option>
-              <option value="low_repetition">Low repetition</option>
-              <option value="pronunciation">Pronunciation control (phoneme-in)</option>
-              <option value="custom">Custom</option>
+              <option value="balanced" title={PRESET_DESCRIPTIONS.balanced}>
+                Balanced (default)
+              </option>
+              <option value="expressive" title={PRESET_DESCRIPTIONS.expressive}>
+                Expressive (controlled)
+              </option>
+              <option value="sensual" title={PRESET_DESCRIPTIONS.sensual}>
+                Sensual
+              </option>
+              <option value="asmr" title={PRESET_DESCRIPTIONS.asmr}>
+                ASMR / Intimate
+              </option>
+              <option value="stable" title={PRESET_DESCRIPTIONS.stable}>
+                Stable
+              </option>
+              <option value="ultra_stable" title={PRESET_DESCRIPTIONS.ultra_stable}>
+                Ultra stable
+              </option>
+              <option value="longform" title={PRESET_DESCRIPTIONS.longform}>
+                Long-form continuity
+              </option>
+              <option value="fast" title={PRESET_DESCRIPTIONS.fast}>
+                Fast / short output
+              </option>
+              <option value="creative" title={PRESET_DESCRIPTIONS.creative}>
+                High variation
+              </option>
+              <option value="low_repetition" title={PRESET_DESCRIPTIONS.low_repetition}>
+                Low repetition
+              </option>
+              <option value="pronunciation" title={PRESET_DESCRIPTIONS.pronunciation}>
+                Pronunciation control (phoneme-in)
+              </option>
+              <option value="custom" title={PRESET_DESCRIPTIONS.custom}>
+                Custom
+              </option>
             </select>
+            <div className="preset-hint" aria-live="polite">
+              {PRESET_DESCRIPTIONS[settings.preset]}
+            </div>
           </div>
 
           <div className="form-group">
