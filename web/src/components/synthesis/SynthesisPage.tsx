@@ -1,11 +1,13 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useApp, PRESET_DESCRIPTIONS, PRESET_VALUES, normalizeSettings, estimateGenerationTime, formatDuration } from "../../context/AppContext";
 import { StorageManager } from "../StorageManager";
 import { GenerationQueue } from "../GenerationQueue";
 import { SavedConfigsLibrary } from "../SavedConfigsLibrary";
 import { ReferenceAudioLibraryModal } from "../ReferenceAudioLibraryModal";
-import type { GenerationSettings, SampleMethod } from "../../types";
+import { GenerationConfigDropdown } from "../GenerationConfigDropdown";
+import { SaveConfigModal } from "../SaveConfigModal";
+import type { GenerationSettings, SampleMethod, GenerationConfigEntry } from "../../types";
 
 function isAudioFile(file: File): boolean {
   return !file.type || file.type.startsWith("audio/");
@@ -21,9 +23,12 @@ export function SynthesisPage() {
     referenceAudio,
     referenceAudioUrl,
     referenceText,
+    inputText,
     setReferenceAudio,
     setReferenceText,
+    setInputText,
     loadReferenceFromLibrary,
+    loadGenerationConfig,
     referenceLibrary,
     saveToLibrary,
     deleteFromLibrary,
@@ -46,12 +51,22 @@ export function SynthesisPage() {
     setError,
     clearCache,
   } = useApp();
-
-  const [inputText, setInputText] = useState("");
   const [seed, setSeed] = useState(42);
   const [isDragActive, setIsDragActive] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [showSaveConfigModal, setShowSaveConfigModal] = useState(false);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
+
+  // Find the current reference voice from library (if loaded from library)
+  const currentVoiceEntry = useMemo(() => {
+    if (!referenceAudio) return null;
+    // Try to find a matching entry by name
+    return referenceLibrary.find(r => r.name === referenceAudio.name) || null;
+  }, [referenceAudio, referenceLibrary]);
+
+  const handleLoadConfig = useCallback((config: GenerationConfigEntry) => {
+    loadGenerationConfig(config);
+  }, [loadGenerationConfig]);
 
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -461,7 +476,15 @@ export function SynthesisPage() {
         </div>
 
         <div className="panel">
-          <h2>Text to Synthesize</h2>
+          <div className="panel-header">
+            <h2>Text to Synthesize</h2>
+            <div className="panel-header-actions">
+              <GenerationConfigDropdown
+                onSelect={handleLoadConfig}
+                onSave={() => setShowSaveConfigModal(true)}
+              />
+            </div>
+          </div>
 
           <div className="form-group">
             <label>Input Text</label>
@@ -562,6 +585,16 @@ export function SynthesisPage() {
         library={referenceLibrary}
         onDelete={deleteFromLibrary}
         onSave={updateLibraryEntry}
+      />
+
+      <SaveConfigModal
+        isOpen={showSaveConfigModal}
+        onClose={() => setShowSaveConfigModal(false)}
+        referenceText={referenceText}
+        inputText={inputText}
+        referenceVoiceId={currentVoiceEntry?.id}
+        referenceVoiceName={currentVoiceEntry?.name}
+        settings={settings}
       />
     </div>
   );

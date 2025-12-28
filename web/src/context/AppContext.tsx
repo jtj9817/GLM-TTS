@@ -7,12 +7,13 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { useReferenceAudioDB, getAudioDuration } from "../hooks/useIndexedDB";
+import { useReferenceAudioDB, useGenerationConfigDB, getAudioDuration } from "../hooks/useIndexedDB";
 import { useQueue } from "../hooks/useQueue";
 import { useAudioConverter } from "../hooks/useAudioConverter";
 import type {
   Generation,
   GenerationSettings,
+  GenerationConfigEntry,
   ReferenceAudioEntry,
   ServerHealth,
   SampleMethod,
@@ -253,8 +254,10 @@ interface AppContextType {
   referenceAudio: File | null;
   referenceAudioUrl: string | null;
   referenceText: string;
+  inputText: string;
   setReferenceAudio: (file: File | null) => void;
   setReferenceText: (text: string) => void;
+  setInputText: (text: string) => void;
   loadReferenceFromLibrary: (entry: ReferenceAudioEntry) => void;
 
   // Reference library (IndexedDB)
@@ -264,6 +267,15 @@ interface AppContextType {
   deleteFromLibrary: (id: string) => Promise<void>;
   updateLibraryEntry: (entry: ReferenceAudioEntry) => Promise<void>;
   dbReady: boolean;
+
+  // Generation configs (IndexedDB)
+  generationConfigs: GenerationConfigEntry[];
+  refreshGenerationConfigs: () => Promise<void>;
+  saveGenerationConfig: (config: Omit<GenerationConfigEntry, "id" | "createdAt" | "updatedAt">) => Promise<void>;
+  updateGenerationConfig: (config: GenerationConfigEntry) => Promise<void>;
+  deleteGenerationConfig: (id: string) => Promise<void>;
+  loadGenerationConfig: (config: GenerationConfigEntry) => void;
+  configsDbReady: boolean;
 
   // Generations
   generations: Generation[];
@@ -375,10 +387,11 @@ export function AppProvider({ children }: AppProviderProps) {
     }
   }, [settings]);
 
-  // Reference audio
+  // Reference audio and input text
   const [referenceAudio, setReferenceAudioState] = useState<File | null>(null);
   const [referenceAudioUrl, setReferenceAudioUrl] = useState<string | null>(null);
   const [referenceText, setReferenceText] = useState("");
+  const [inputText, setInputText] = useState("");
 
   const setReferenceAudio = useCallback((file: File | null) => {
     setReferenceAudioState(file);
@@ -455,6 +468,83 @@ export function AppProvider({ children }: AppProviderProps) {
       return nextUrl;
     });
   }, []);
+
+  // Generation configs (IndexedDB)
+  const {
+    saveConfig,
+    listConfigs,
+    updateConfig: updateConfigDB,
+    deleteConfig: deleteConfigDB,
+    ready: configsDbReady,
+  } = useGenerationConfigDB();
+  const [generationConfigs, setGenerationConfigs] = useState<GenerationConfigEntry[]>([]);
+
+  const refreshGenerationConfigs = useCallback(async () => {
+    if (!configsDbReady) return;
+    try {
+      const configs = await listConfigs();
+      setGenerationConfigs(configs);
+    } catch (err) {
+      console.error("Failed to load generation configs:", err);
+    }
+  }, [configsDbReady, listConfigs]);
+
+  useEffect(() => {
+    refreshGenerationConfigs();
+  }, [refreshGenerationConfigs]);
+
+  const saveGenerationConfig = useCallback(async (
+    config: Omit<GenerationConfigEntry, "id" | "createdAt" | "updatedAt">
+  ) => {
+    if (!configsDbReady) return;
+    const now = Date.now();
+    await saveConfig({
+      ...config,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await refreshGenerationConfigs();
+  }, [configsDbReady, saveConfig, refreshGenerationConfigs]);
+
+  const updateGenerationConfig = useCallback(async (config: GenerationConfigEntry) => {
+    await updateConfigDB(config);
+    await refreshGenerationConfigs();
+  }, [updateConfigDB, refreshGenerationConfigs]);
+
+  const deleteGenerationConfig = useCallback(async (id: string) => {
+    await deleteConfigDB(id);
+    await refreshGenerationConfigs();
+  }, [deleteConfigDB, refreshGenerationConfigs]);
+
+  const loadGenerationConfig = useCallback((config: GenerationConfigEntry) => {
+    // Load text pairs
+    setReferenceText(config.referenceText);
+    setInputText(config.inputText);
+
+    // Check if tied to a voice that still exists
+    if (config.referenceVoiceId) {
+      const voice = referenceLibrary.find(r => r.id === config.referenceVoiceId);
+      if (voice) {
+        // Load the voice
+        const file = new File([voice.audioBlob], voice.name, { type: voice.audioBlob.type });
+        setReferenceAudioState(file);
+        const nextUrl = URL.createObjectURL(voice.audioBlob);
+        setReferenceAudioUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev);
+          return nextUrl;
+        });
+      } else {
+        // Voice was deleted - show warning
+        setError(`Reference voice "${config.referenceVoiceName}" no longer exists. Text loaded without audio.`);
+      }
+    }
+
+    // Optionally apply settings
+    if (config.includeSettings && config.settings) {
+      setSettings(normalizeSettings({ ...PRESET_BALANCED, ...config.settings }));
+    }
+  }, [referenceLibrary, setSettings]);
 
   // Generations
   const [generations, setGenerations] = useState<Generation[]>([]);
@@ -799,8 +889,10 @@ export function AppProvider({ children }: AppProviderProps) {
     referenceAudio,
     referenceAudioUrl,
     referenceText,
+    inputText,
     setReferenceAudio,
     setReferenceText,
+    setInputText,
     loadReferenceFromLibrary,
     referenceLibrary,
     refreshReferenceLibrary,
@@ -808,6 +900,13 @@ export function AppProvider({ children }: AppProviderProps) {
     deleteFromLibrary,
     updateLibraryEntry,
     dbReady,
+    generationConfigs,
+    refreshGenerationConfigs,
+    saveGenerationConfig,
+    updateGenerationConfig,
+    deleteGenerationConfig,
+    loadGenerationConfig,
+    configsDbReady,
     generations,
     refreshGenerations,
     deleteGeneration,

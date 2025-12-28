@@ -58,6 +58,21 @@ export interface ReferenceAudioEntry {
   waveform?: number[];
 }
 
+// Generation Config Entry (stored in IndexedDB)
+export interface GenerationConfigEntry {
+  id: string;
+  name: string;
+  description?: string;
+  referenceText: string;
+  inputText: string;
+  referenceVoiceId?: string;      // Optional link to ReferenceAudioEntry
+  referenceVoiceName?: string;    // Cached name for display
+  settings?: Partial<GenerationSettings>;
+  includeSettings: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Storage Info from backend
 export interface StorageInfo {
   totalBytes: number;
