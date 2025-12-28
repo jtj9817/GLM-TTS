@@ -6,6 +6,7 @@ import { GenerationQueue } from "./components/GenerationQueue";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { ReferenceAudioLibraryModal } from "./components/ReferenceAudioLibraryModal";
 import { SavedConfigsLibrary } from "./components/SavedConfigsLibrary";
+import { Library } from "./components/Library";
 import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
 import { useQueue } from "./hooks/useQueue";
 import { useAudioConverter } from "./hooks/useAudioConverter";
@@ -545,7 +546,6 @@ export function App() {
 
   // Delete reference audio from library
   const handleDeleteFromLibrary = async (id: string) => {
-    if (!confirm("Delete this reference audio from library?")) return;
     try {
       await deleteStoredAudio(id);
       await loadSavedReferenceAudios();
@@ -716,8 +716,6 @@ export function App() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this generation?")) return;
-
     try {
       const response = await fetch(`${API_BASE}/api/generations/${id}`, {
         method: "DELETE",
@@ -1182,107 +1180,28 @@ export function App() {
           onRetryFailed={retryFailed}
         />
 
-        <div className="panel output-panel" ref={outputPanelRef}>
-          <div className="panel-header">
-            <h2>Output</h2>
-            <label className="checkbox waveform-toggle">
-              <input
-                type="checkbox"
-                checked={waveformEnabled}
-                onChange={e => setWaveformEnabled(e.target.checked)}
-              />
-              Show Waveforms
-            </label>
-          </div>
-
-          {generations.length > 0 ? (
-            <div className="output-audio">
-              {generations.map(gen => (
-                <div key={gen.id} className="output-item">
-                  <div className="output-header">
-                    <div className="output-meta">
-                      <div className="output-time">
-                        {new Date(gen.created_at).toLocaleString()}
-                      </div>
-                      <div className="output-text">{gen.input_text}</div>
-                      {gen.settings && (
-                        <div className="output-time">
-                          Preset: {String(gen.settings.preset ?? "custom")} | {String(gen.settings.sample_method ?? "-")} | k={String(gen.settings.top_k ?? "-")}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDelete(gen.id)}
-                      className="btn-delete"
-                      title="Delete generation"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-
-                  {waveformEnabled && (
-                    <div className="waveform-wrapper">
-                      <WaveformVisualizer audioUrl={gen.audio_url} height={80} />
-                    </div>
-                  )}
-
-                  <audio
-                    controls
-                    className="audio-player"
-                    src={gen.audio_url}
-                    onError={() => setError("Audio failed to load/play. Check server logs and audio format.")}
-                  />
-                  <div className="output-actions">
-                    <a
-                      href={gen.audio_url}
-                      download={gen.output_filename}
-                      className="download-btn"
-                    >
-                      Download WAV
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleExport(gen)}
-                      className="export-btn"
-                      disabled={exportingId === gen.id}
-                    >
-                      {exportingId === gen.id ? "Exporting..." : "📦 Export + Settings"}
-                    </button>
-                    {ffmpegLoading && !ffmpegLoaded && (
-                      <span className="format-loading" title="Loading audio converter...">
-                        Loading converter...
-                      </span>
-                    )}
-                    {ffmpegLoaded && (
-                      <select
-                        value={selectedFormat}
-                        onChange={e => setSelectedFormat(e.target.value as typeof selectedFormat)}
-                        className="format-select"
-                        title="Convert and download in different format"
-                      >
-                        <option value="wav">WAV (Original)</option>
-                        <option value="mp3">MP3 (Compressed)</option>
-                        <option value="flac">FLAC (Lossless)</option>
-                        <option value="ogg">OGG Vorbis</option>
-                      </select>
-                    )}
-                    {ffmpegLoaded && selectedFormat !== "wav" && (
-                      <button
-                        type="button"
-                        onClick={() => handleConvertAndDownload(gen, selectedFormat)}
-                        className="convert-btn"
-                        disabled={convertingId === gen.id || ffmpegLoading}
-                      >
-                        {convertingId === gen.id ? "Converting..." : `⬇️ ${selectedFormat.toUpperCase()}`}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="placeholder">Generated audio will appear here</div>
-          )}
+        <div ref={outputPanelRef}>
+          <Library
+            apiBase={API_BASE}
+            generations={generations}
+            onDeleteGeneration={handleDelete}
+            onExportGeneration={handleExport}
+            exportingId={exportingId}
+            waveformEnabled={waveformEnabled}
+            onToggleWaveform={setWaveformEnabled}
+            ffmpegLoaded={ffmpegLoaded}
+            ffmpegLoading={ffmpegLoading}
+            selectedFormat={selectedFormat}
+            onFormatChange={setSelectedFormat}
+            onConvert={handleConvertAndDownload}
+            convertingId={convertingId}
+            referenceAudios={savedReferenceAudios}
+            onSelectReference={handleLoadFromLibrary}
+            onDeleteReference={handleDeleteFromLibrary}
+            onUpdateReference={handleUpdateLibraryEntry}
+            onLoadPreset={setSettings}
+            currentSettings={settings}
+          />
         </div>
       </div>
 
