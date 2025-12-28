@@ -177,6 +177,39 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+/**
+ * Estimates generation time based on text length and settings.
+ *
+ * Empirical measurements:
+ * - ~12.5 characters per second of audio
+ * - ~80 LLM tokens per second generation speed
+ * - ~0.5 seconds per Flow denoising step (10 steps = 5s)
+ */
+function estimateGenerationTime(text: string, settings: GenerationSettings): number {
+  const charCount = text.length;
+  if (charCount === 0) return 0;
+
+  // Estimate LLM processing time
+  const avgTokenTextRatio = (settings.min_token_text_ratio + settings.max_token_text_ratio) / 2;
+  const estimatedTokens = charCount * avgTokenTextRatio;
+  const tokensPerSecond = 80; // GPU-dependent, use conservative estimate
+  const llmSeconds = estimatedTokens / tokensPerSecond;
+
+  // Flow matching time (relatively constant)
+  const flowSeconds = 5; // 10 steps * 0.5s/step
+
+  // Total time (LLM + Flow + overhead)
+  return Math.ceil(llmSeconds + flowSeconds + 2);
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds === 0) return "0s";
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
 function normalizeSettings(input: GenerationSettings): GenerationSettings {
   const top_k = Math.floor(clamp(input.top_k, 1, 200));
   const top_p = clamp(input.top_p, 0.01, 1.0);
@@ -236,6 +269,8 @@ export function App() {
   });
   
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const outputPanelRef = useRef<HTMLDivElement>(null);
+  const prevGenerationsLengthRef = useRef(generations.length);
 
   useEffect(() => {
     void (async () => {
@@ -257,6 +292,19 @@ export function App() {
       // ignore
     }
   }, [settings]);
+
+  // Auto-scroll to output panel when a new generation is added
+  useEffect(() => {
+    if (generations.length > prevGenerationsLengthRef.current && generations.length > 0) {
+      setTimeout(() => {
+        outputPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100); // Small delay to ensure render complete
+    }
+    prevGenerationsLengthRef.current = generations.length;
+  }, [generations.length]);
 
   const checkServerHealth = async () => {
     try {
@@ -356,6 +404,25 @@ export function App() {
       }
     } catch (e) {
       setError("Failed to clear cache");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this generation?")) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/generations/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete");
+      }
+
+      // Remove from state
+      setGenerations(prev => prev.filter(g => g.id !== id));
+    } catch (e) {
+      setError(`Delete failed: ${e instanceof Error ? e.message : "Unknown error"}`);
     }
   };
 
@@ -640,17 +707,32 @@ export function App() {
               placeholder="Enter the text you want to convert to speech..."
               rows={5}
             />
+            <div className="text-stats">
+              <span>{inputText.length} characters</span>
+              <span className="text-stats-separator">•</span>
+              <span>~{formatDuration(estimateGenerationTime(inputText, settings))} estimated</span>
+            </div>
           </div>
 
           <div className="form-group">
             <label>Seed</label>
-            <input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
-              min={0}
-              max={999999}
-            />
+            <div className="seed-input-group">
+              <input
+                type="number"
+                value={seed}
+                onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
+                min={0}
+                max={999999}
+              />
+              <button
+                type="button"
+                onClick={() => setSeed(Math.floor(Math.random() * 1000000))}
+                className="btn-icon"
+                title="Generate random seed"
+              >
+                🎲
+              </button>
+            </div>
           </div>
 
           <button 
@@ -662,23 +744,32 @@ export function App() {
           </button>
         </div>
 
-        <div className="panel output-panel">
+        <div className="panel output-panel" ref={outputPanelRef}>
           <h2>Output</h2>
 
           {generations.length > 0 ? (
             <div className="output-audio">
               {generations.map(gen => (
                 <div key={gen.id} className="output-item">
-                  <div className="output-meta">
-                    <div className="output-time">
-                      {new Date(gen.created_at).toLocaleString()}
-                    </div>
-                    <div className="output-text">{gen.input_text}</div>
-                    {gen.settings && (
+                  <div className="output-header">
+                    <div className="output-meta">
                       <div className="output-time">
-                        Preset: {String(gen.settings.preset ?? "custom")} | {String(gen.settings.sample_method ?? "-")} | k={String(gen.settings.top_k ?? "-")}
+                        {new Date(gen.created_at).toLocaleString()}
                       </div>
-                    )}
+                      <div className="output-text">{gen.input_text}</div>
+                      {gen.settings && (
+                        <div className="output-time">
+                          Preset: {String(gen.settings.preset ?? "custom")} | {String(gen.settings.sample_method ?? "-")} | k={String(gen.settings.top_k ?? "-")}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDelete(gen.id)}
+                      className="btn-delete"
+                      title="Delete generation"
+                    >
+                      🗑️
+                    </button>
                   </div>
 
                   <audio

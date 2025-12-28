@@ -154,6 +154,42 @@ const server = serve({
         });
       }),
 
+    "/api/generations/:id": {
+      DELETE: req =>
+        withSession(req, async sessionId => {
+          const id = req.params.id;
+
+          // Fetch generation to get audio path
+          const row = db
+            .query<Pick<GenerationRow, "audio_path">, { id: string; sessionId: string }>(
+              "SELECT audio_path FROM generations WHERE id = $id AND session_id = $sessionId",
+            )
+            .get({ id, sessionId });
+
+          if (!row) return jsonError("Generation not found", 404);
+
+          // Delete audio file from disk
+          try {
+            const file = Bun.file(row.audio_path);
+            if (await file.exists()) {
+              await Bun.write(row.audio_path, ""); // Clear the file first
+              const fs = await import("node:fs/promises");
+              await fs.unlink(row.audio_path);
+            }
+          } catch (err) {
+            console.error(`Failed to delete audio file ${row.audio_path}:`, err);
+          }
+
+          // Delete from database
+          db.query("DELETE FROM generations WHERE id = $id AND session_id = $sessionId").run({
+            id,
+            sessionId,
+          });
+
+          return Response.json({ success: true });
+        }),
+    },
+
     "/api/synthesize": {
       POST: req =>
         withSession(req, async sessionId => {
