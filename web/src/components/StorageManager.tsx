@@ -3,6 +3,7 @@ import type { StorageInfo } from "../types";
 
 interface Props {
   onCleanup: () => void;
+  apiBase: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -13,7 +14,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-export function StorageManager({ onCleanup }: Props) {
+export function StorageManager({ onCleanup, apiBase }: Props) {
   const [info, setInfo] = useState<StorageInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [cleanupLoading, setCleanupLoading] = useState(false);
@@ -23,7 +24,7 @@ export function StorageManager({ onCleanup }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/storage/info");
+      const response = await fetch(`${apiBase}/api/storage/info`);
       if (!response.ok) {
         throw new Error("Failed to fetch storage info");
       }
@@ -51,7 +52,7 @@ export function StorageManager({ onCleanup }: Props) {
     setCleanupLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/storage/cleanup", {
+      const response = await fetch(`${apiBase}/api/storage/cleanup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ olderThanDays: days }),

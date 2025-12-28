@@ -752,7 +752,7 @@ export function App() {
 
           <hr className="settings-divider" />
 
-          <StorageManager onCleanup={loadGenerations} />
+          <StorageManager onCleanup={loadGenerations} apiBase={API_BASE} />
         </div>
       )}
 
