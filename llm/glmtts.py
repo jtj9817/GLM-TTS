@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
 import yaml
 from typing import Union, Optional, List, Dict, Any
 import torch
@@ -249,8 +250,14 @@ class GLMTTS(nn.Module):
         # 4. Step-by-Step Decoding
         out_tokens = []
         past_key_values = None
+        LOG_INTERVAL = 20  # Log every 20 tokens
 
         for i in range(max_len):
+            # Log progress periodically
+            if i > 0 and i % LOG_INTERVAL == 0:
+                progress_pct = min(100, int((i / max_len) * 100))
+                logging.info(f"[LLM] Generating tokens: {i}/{max_len} ({progress_pct}%)")
+
             model_input = {
                 "inputs_embeds": inputs_embeds,
                 "output_hidden_states": True,
@@ -297,6 +304,9 @@ class GLMTTS(nn.Module):
             
             # Prepare input for the next step (auto-regressive)
             inputs_embeds = self.llama_embedding(torch.LongTensor([top_ids]).to(device))[None]
+
+        # Log completion
+        logging.info(f"[LLM] Token generation complete: {len(out_tokens)} tokens generated")
 
         # 5. Validation and Output Construction
         # Ensure all tokens are within the valid audio token range

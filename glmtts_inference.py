@@ -249,8 +249,11 @@ def generate_long(
         "syn_text_phoneme": [],
     }
     short_text_list = text_frontend.split_by_len(syn_text)
+    total_chunks = len(short_text_list)
 
-    for _, tts_text in enumerate(short_text_list):
+    for chunk_idx, tts_text in enumerate(short_text_list):
+        text_preview = tts_text[:50] + ('...' if len(tts_text) > 50 else '')
+        logging.info(f"[Synthesis] Processing chunk {chunk_idx + 1}/{total_chunks}: '{text_preview}'")
         seed_util.set_seed(seed)
         tts_text_tn = text_frontend.text_normalize(
             tts_text

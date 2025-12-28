@@ -300,6 +300,11 @@ async def synthesize(
             "use_cache": use_cache,
         }
 
+        # Log synthesis start
+        text_preview = norm_text[:100] + ('...' if len(norm_text) > 100 else '')
+        logger.info(f"[Synthesis] Starting audio generation: '{text_preview}'")
+        logger.info(f"[Synthesis] Settings: method={sample_method}, top_k={top_k}, top_p={top_p}, temp={temperature}, seed={seed}")
+
         # Generate audio
         tts_speech, _, _, _ = generate_long(
             frontend=state.frontend,
@@ -321,6 +326,10 @@ async def synthesize(
             max_token_text_ratio=max_token_text_ratio,
             use_phoneme=use_phoneme,
         )
+
+        # Log synthesis complete
+        audio_duration = tts_speech.shape[1] / CONFIG["sample_rate"]
+        logger.info(f"[Synthesis] Audio generation complete: {audio_duration:.2f} seconds of audio")
 
         # Save output
         output_path = tempfile.mktemp(suffix=".wav")
