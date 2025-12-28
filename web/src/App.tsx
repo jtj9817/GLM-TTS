@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import JSZip from "jszip";
 import "./index.css";
 import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
 import { StorageManager } from "./components/StorageManager";
@@ -229,6 +230,31 @@ function normalizeSettings(input: GenerationSettings): GenerationSettings {
   };
 }
 
+function extFromMime(mime: string): string {
+  const lower = mime.toLowerCase();
+  if (lower.includes("wav")) return "wav";
+  if (lower.includes("mpeg") || lower.includes("mp3")) return "mp3";
+  if (lower.includes("flac")) return "flac";
+  if (lower.includes("ogg")) return "ogg";
+  return "audio";
+}
+
+function baseName(filename: string): string {
+  const trimmed = filename.trim();
+  if (!trimmed) return "";
+  const lastDot = trimmed.lastIndexOf(".");
+  if (lastDot <= 0) return trimmed;
+  return trimmed.slice(0, lastDot);
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function isAudioFile(file: File): boolean {
+  return !file.type || file.type.startsWith("audio/");
+}
+
 type Generation = {
   id: string;
   input_text: string;
@@ -252,6 +278,8 @@ export function App() {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [serverStatus, setServerStatus] = useState<ServerHealth | null>(null);
   const [statusChecked, setStatusChecked] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<GenerationSettings>(() => {
@@ -421,17 +449,51 @@ export function App() {
     setStatusChecked(true);
   };
 
+  const setReferenceAudioFile = useCallback((file: File) => {
+    if (!isAudioFile(file)) {
+      setError("Please upload a valid audio file");
+      return;
+    }
+
+    setReferenceAudio(file);
+    const nextUrl = URL.createObjectURL(file);
+    setReferenceAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return nextUrl;
+    });
+    setError(null);
+  }, []);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setReferenceAudio(file);
-      const nextUrl = URL.createObjectURL(file);
-      setReferenceAudioUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev);
-        return nextUrl;
-      });
-      setError(null);
-    }
+    if (file) setReferenceAudioFile(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setIsDragActive(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && e.currentTarget.contains(related)) return;
+    setIsDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setIsDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) setReferenceAudioFile(file);
   };
 
   useEffect(() => {
@@ -520,6 +582,57 @@ export function App() {
       setGenerations(prev => prev.filter(g => g.id !== id));
     } catch (e) {
       setError(`Delete failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+    }
+  };
+
+  const handleExport = async (gen: Generation) => {
+    if (exportingId) return;
+    setExportingId(gen.id);
+    setError(null);
+
+    try {
+      const response = await fetch(gen.audio_url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio (${response.status})`);
+      }
+      const audioBlob = await response.blob();
+
+      const fallbackName = `generation-${gen.id}.${extFromMime(gen.audio_mime)}`;
+      const audioFilename = sanitizeFilename((gen.output_filename || fallbackName).trim());
+      const base = baseName(audioFilename) || sanitizeFilename(`generation-${gen.id}`);
+
+      const zip = new JSZip();
+      zip.file(audioFilename, audioBlob);
+
+      const metadata = {
+        id: gen.id,
+        created_at: gen.created_at,
+        created_at_iso: new Date(gen.created_at).toISOString(),
+        input_text: gen.input_text,
+        reference_text: gen.reference_text,
+        seed: gen.seed,
+        audio: {
+          mime: gen.audio_mime,
+          filename: audioFilename,
+        },
+        settings: gen.settings ?? {},
+      };
+
+      zip.file(`${base}.json`, JSON.stringify(metadata, null, 2));
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = `${base}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(zipUrl);
+    } catch (e) {
+      setError(`Export failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+    } finally {
+      setExportingId(null);
     }
   };
 
@@ -820,7 +933,13 @@ export function App() {
 
           <div className="form-group">
             <label>Upload Reference Audio</label>
-            <div className="file-input-wrapper">
+            <div
+              className={`file-input-wrapper${isDragActive ? " drag-active" : ""}`}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <input
                 ref={audioInputRef}
                 type="file"
@@ -829,7 +948,11 @@ export function App() {
                 id="audio-upload"
               />
               <label htmlFor="audio-upload" className="file-label">
-                {referenceAudio ? referenceAudio.name : "Choose audio file..."}
+                {referenceAudio
+                  ? referenceAudio.name
+                  : isDragActive
+                    ? "Drop audio file to upload"
+                    : "Drag & drop audio here, or click to browse..."}
               </label>
             </div>
             {referenceAudioUrl && (
@@ -947,13 +1070,23 @@ export function App() {
                     src={gen.audio_url}
                     onError={() => setError("Audio failed to load/play. Check server logs and audio format.")}
                   />
-                  <a
-                    href={gen.audio_url}
-                    download={gen.output_filename}
-                    className="download-btn"
-                  >
-                    Download
-                  </a>
+                  <div className="output-actions">
+                    <a
+                      href={gen.audio_url}
+                      download={gen.output_filename}
+                      className="download-btn"
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleExport(gen)}
+                      className="export-btn"
+                      disabled={exportingId !== null}
+                    >
+                      {exportingId === gen.id ? "Exporting..." : "Export + Settings"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

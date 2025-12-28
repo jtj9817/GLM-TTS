@@ -239,6 +239,12 @@ label.checkbox input[type="checkbox"] {
   background: rgba(102, 126, 234, 0.1);
 }
 
+.file-input-wrapper.drag-active .file-label {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .audio-preview {
   width: 100%;
   margin-top: 1rem;
@@ -307,6 +313,12 @@ label.checkbox input[type="checkbox"] {
   border-radius: 8px;
 }
 
+.output-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .download-btn {
   display: inline-block;
   padding: 0.75rem 1.5rem;
@@ -321,6 +333,27 @@ label.checkbox input[type="checkbox"] {
 
 .download-btn:hover {
   background: rgba(34, 197, 94, 0.3);
+}
+
+.export-btn {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.3);
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .placeholder {
