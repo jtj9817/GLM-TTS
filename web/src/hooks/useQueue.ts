@@ -65,10 +65,8 @@ export function useQueue() {
     cancelRef.current = false;
     setIsProcessing(true);
 
-    for (let index = 0; index < pendingItems.length; index += 1) {
+    for (const [index, item] of pendingItems.entries()) {
       if (cancelRef.current) break;
-
-      const item = pendingItems[index];
       setCurrentItem(item);
       setQueue(prev =>
         prev.map(i => (i.id === item.id ? { ...i, status: "processing" as const } : i)),
