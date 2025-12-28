@@ -24,6 +24,7 @@ type GenerationSettings = {
     | "pronunciation"
     | "low_repetition"
     | "sensual"
+    | "asmr"
     | "custom";
   sample_method: SampleMethod;
   top_k: number;
@@ -158,6 +159,18 @@ const PRESET_SENSUAL: GenerationSettings = {
   max_token_text_ratio: 22,
   use_cache: true,
   use_phoneme: false,
+};
+
+const PRESET_ASMR: GenerationSettings = {
+  preset: "asmr",
+  sample_method: "ras",
+  top_k: 45,
+  top_p: 0.92,
+  temperature: 1.25,
+  min_token_text_ratio: 2.8,
+  max_token_text_ratio: 28,
+  use_cache: true,
+  use_phoneme: true,  // Enable for precise phoneme control
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -404,15 +417,18 @@ export function App() {
                                   ? PRESET_LOW_REPETITION
                                   : preset === "sensual"
                                     ? PRESET_SENSUAL
-                                    : preset === "custom"
-                                      ? settings
-                                      : PRESET_BALANCED;
+                                    : preset === "asmr"
+                                      ? PRESET_ASMR
+                                      : preset === "custom"
+                                        ? settings
+                                        : PRESET_BALANCED;
                 setSettings(normalizeSettings(next));
               }}
             >
               <option value="balanced">Balanced (default)</option>
               <option value="expressive">Expressive (controlled)</option>
               <option value="sensual">Sensual</option>
+              <option value="asmr">ASMR / Intimate</option>
               <option value="stable">Stable</option>
               <option value="ultra_stable">Ultra stable</option>
               <option value="longform">Long-form continuity</option>
