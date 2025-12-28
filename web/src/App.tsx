@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import "./index.css";
+import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
+import { StorageManager } from "./components/StorageManager";
+import type { ReferenceAudioEntry } from "./types";
 
 const API_BASE = "";
 
@@ -272,6 +275,17 @@ export function App() {
   const outputPanelRef = useRef<HTMLDivElement>(null);
   const prevGenerationsLengthRef = useRef(generations.length);
 
+  // IndexedDB for reference audio persistence
+  const {
+    saveAudio,
+    listAudio,
+    deleteAudio: deleteStoredAudio,
+    ready: dbReady,
+  } = useReferenceAudioDB();
+  const [savedReferenceAudios, setSavedReferenceAudios] = useState<ReferenceAudioEntry[]>([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -305,6 +319,89 @@ export function App() {
     }
     prevGenerationsLengthRef.current = generations.length;
   }, [generations.length]);
+
+  // Load saved reference audios from IndexedDB
+  const loadSavedReferenceAudios = useCallback(async () => {
+    if (!dbReady) return;
+    try {
+      const audios = await listAudio();
+      setSavedReferenceAudios(audios);
+    } catch (err) {
+      console.error("Failed to load saved reference audios:", err);
+    }
+  }, [dbReady, listAudio]);
+
+  useEffect(() => {
+    loadSavedReferenceAudios();
+  }, [loadSavedReferenceAudios]);
+
+  // Load generations from server
+  const loadGenerations = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/generations`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { generations: Generation[] };
+      setGenerations(Array.isArray(data.generations) ? data.generations : []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Save current reference audio to library
+  const handleSaveToLibrary = async () => {
+    if (!referenceAudio || !dbReady) return;
+
+    const name = prompt("Name for this reference audio:");
+    if (!name?.trim()) return;
+
+    setSavingToLibrary(true);
+    try {
+      const duration = await getAudioDuration(referenceAudio).catch(() => undefined);
+
+      await saveAudio({
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        audioBlob: referenceAudio,
+        transcript: referenceText,
+        createdAt: Date.now(),
+        duration,
+      });
+
+      await loadSavedReferenceAudios();
+      alert("Reference audio saved to library!");
+    } catch (err) {
+      setError(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingToLibrary(false);
+    }
+  };
+
+  // Load reference audio from library
+  const handleLoadFromLibrary = (entry: ReferenceAudioEntry) => {
+    const file = new File([entry.audioBlob], entry.name, { type: entry.audioBlob.type });
+    setReferenceAudio(file);
+    setReferenceText(entry.transcript);
+
+    const nextUrl = URL.createObjectURL(entry.audioBlob);
+    setReferenceAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return nextUrl;
+    });
+
+    setShowLibrary(false);
+    setError(null);
+  };
+
+  // Delete reference audio from library
+  const handleDeleteFromLibrary = async (id: string) => {
+    if (!confirm("Delete this reference audio from library?")) return;
+    try {
+      await deleteStoredAudio(id);
+      await loadSavedReferenceAudios();
+    } catch (err) {
+      setError(`Failed to delete: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
 
   const checkServerHealth = async () => {
     try {
@@ -652,6 +749,10 @@ export function App() {
               Enable phoneme-in (pronunciation control)
             </label>
           </div>
+
+          <hr className="settings-divider" />
+
+          <StorageManager onCleanup={loadGenerations} />
         </div>
       )}
 
@@ -659,8 +760,64 @@ export function App() {
 
       <div className="main-content">
         <div className="panel">
-          <h2>Reference Voice</h2>
-          
+          <div className="panel-header">
+            <h2>Reference Voice</h2>
+            {dbReady && savedReferenceAudios.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowLibrary(v => !v)}
+                className="btn-library"
+              >
+                {showLibrary ? "Hide Library" : `Library (${savedReferenceAudios.length})`}
+              </button>
+            )}
+          </div>
+
+          {showLibrary && savedReferenceAudios.length > 0 && (
+            <div className="reference-library">
+              <div className="library-header">
+                <span>Saved Reference Audio</span>
+              </div>
+              <div className="library-items">
+                {savedReferenceAudios.map(entry => (
+                  <div key={entry.id} className="library-item">
+                    <div className="library-item-info">
+                      <span className="library-item-name">{entry.name}</span>
+                      {entry.duration && (
+                        <span className="library-item-duration">
+                          {Math.round(entry.duration)}s
+                        </span>
+                      )}
+                      {entry.transcript && (
+                        <span className="library-item-transcript" title={entry.transcript}>
+                          {entry.transcript.slice(0, 50)}{entry.transcript.length > 50 ? "..." : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div className="library-item-actions">
+                      <button
+                        type="button"
+                        onClick={() => handleLoadFromLibrary(entry)}
+                        className="btn-load"
+                        title="Load this reference"
+                      >
+                        Use
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFromLibrary(entry.id)}
+                        className="btn-delete-small"
+                        title="Delete from library"
+                      >
+                        X
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="form-group">
             <label>Upload Reference Audio</label>
             <div className="file-input-wrapper">
@@ -676,12 +833,24 @@ export function App() {
               </label>
             </div>
             {referenceAudioUrl && (
-              <audio
-                controls
-                className="audio-preview"
-                src={referenceAudioUrl}
-                onError={() => setError("Reference audio failed to load/play. Try a different file/format.")}
-              />
+              <>
+                <audio
+                  controls
+                  className="audio-preview"
+                  src={referenceAudioUrl}
+                  onError={() => setError("Reference audio failed to load/play. Try a different file/format.")}
+                />
+                {dbReady && (
+                  <button
+                    type="button"
+                    onClick={handleSaveToLibrary}
+                    disabled={savingToLibrary}
+                    className="btn-save-library"
+                  >
+                    {savingToLibrary ? "Saving..." : "Save to Library"}
+                  </button>
+                )}
+              </>
             )}
           </div>
 

@@ -1,7 +1,7 @@
 import { serve } from "bun";
 import index from "./index.html";
 
-import { db } from "./server/db";
+import { db, DB_PATH } from "./server/db";
 import { getOrCreateSession, sessionSetCookieHeader } from "./server/session";
 import { audioPathForId, defaultFilename, extForMime } from "./server/storage";
 
@@ -288,6 +288,90 @@ const server = serve({
               audio_url: `/api/generations/${id}/audio`,
             },
           });
+        }),
+    },
+
+    "/api/storage/info": req =>
+      withSession(req, async sessionId => {
+        const rows = db
+          .query<Pick<GenerationRow, "audio_path">, { sessionId: string }>(
+            "SELECT audio_path FROM generations WHERE session_id = $sessionId",
+          )
+          .all({ sessionId });
+
+        let totalBytes = 0;
+        let fileCount = 0;
+
+        for (const row of rows) {
+          try {
+            const file = Bun.file(row.audio_path);
+            if (await file.exists()) {
+              totalBytes += file.size;
+              fileCount++;
+            }
+          } catch {
+            // ignore file errors
+          }
+        }
+
+        // Get database size
+        let dbBytes = 0;
+        try {
+          const dbFile = Bun.file(DB_PATH);
+          if (await dbFile.exists()) {
+            dbBytes = dbFile.size;
+          }
+        } catch {
+          // ignore
+        }
+
+        return Response.json({ totalBytes, fileCount, dbBytes });
+      }),
+
+    "/api/storage/cleanup": {
+      POST: req =>
+        withSession(req, async sessionId => {
+          let olderThanDays: number;
+          try {
+            const body = await req.json();
+            olderThanDays = Number(body.olderThanDays);
+            if (!Number.isFinite(olderThanDays) || olderThanDays < 0) {
+              olderThanDays = 0;
+            }
+          } catch {
+            return jsonError("Invalid request body", 400);
+          }
+
+          const cutoffTime = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+
+          const rows = db
+            .query<Pick<GenerationRow, "id" | "audio_path">, { sessionId: string; cutoff: number }>(
+              "SELECT id, audio_path FROM generations WHERE session_id = $sessionId AND created_at < $cutoff",
+            )
+            .all({ sessionId, cutoff: cutoffTime });
+
+          let deleted = 0;
+          let bytesFreed = 0;
+
+          for (const row of rows) {
+            try {
+              const file = Bun.file(row.audio_path);
+              if (await file.exists()) {
+                bytesFreed += file.size;
+                // Delete the audio file
+                const fs = await import("node:fs/promises");
+                await fs.unlink(row.audio_path);
+              }
+
+              // Delete from database
+              db.query("DELETE FROM generations WHERE id = $id").run({ id: row.id });
+              deleted++;
+            } catch (err) {
+              console.error(`Failed to delete generation ${row.id}:`, err);
+            }
+          }
+
+          return Response.json({ deleted, bytesFreed });
         }),
     },
 

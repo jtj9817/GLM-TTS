@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(THIS_DIR, "..", "..", "data");
-const DB_PATH = join(DATA_DIR, "glmtts.sqlite");
+export const DB_PATH = join(DATA_DIR, "glmtts.sqlite");
 
 mkdirSync(DATA_DIR, { recursive: true });
 
