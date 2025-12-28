@@ -54,6 +54,23 @@ db.run(
   "CREATE INDEX IF NOT EXISTS idx_generations_session_created_at ON generations(session_id, created_at DESC);",
 );
 
+// Saved configurations table
+db.run(`
+  CREATE TABLE IF NOT EXISTS saved_configs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    settings_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+`);
+
+db.run(
+  "CREATE INDEX IF NOT EXISTS idx_saved_configs_session_created_at ON saved_configs(session_id, created_at DESC);",
+);
+
 export function nowMs(): number {
   return Date.now();
 }

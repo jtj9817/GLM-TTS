@@ -961,3 +961,560 @@ label.checkbox input[type="checkbox"] {
   display: flex;
   gap: 0.5rem;
 }
+
+/* ============================================
+   PHASE 6: Advanced Features Styles
+   ============================================ */
+
+/* Feature 11: Waveform Visualizer */
+.waveform-wrapper {
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.waveform-container {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.waveform-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 120px;
+}
+
+.waveform-placeholder {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.waveform-loading {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+}
+
+.waveform-error {
+  color: #f87171;
+  font-size: 0.875rem;
+}
+
+.waveform-toggle {
+  font-size: 0.875rem;
+  padding: 0;
+  margin-left: auto;
+}
+
+/* Feature 12: Reference Audio Library Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  position: relative;
+  background: #1f2937;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 900px;
+  max-height: 80vh;
+  width: 90%;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  z-index: 1001;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-content.modal-small {
+  max-width: 500px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0.25rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.btn-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.library-controls {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 2rem 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.search-clear {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.search-clear:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sort-select {
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+}
+
+.library-stats {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.library-filter-hint {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.library-items {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.library-empty {
+  text-align: center;
+  padding: 3rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.library-empty .hint {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 0.5rem;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.library-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.2s;
+}
+
+.library-card:hover {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.library-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.library-card-name {
+  margin: 0;
+  font-size: 1rem;
+  color: #667eea;
+  font-weight: 500;
+}
+
+.library-name-edit {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  width: 100%;
+}
+
+.library-name-edit:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.library-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  align-items: flex-end;
+}
+
+.library-card-duration {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(102, 126, 234, 0.15);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
+.library-card-date {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.library-card-transcript {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.library-card-audio {
+  margin: 0;
+}
+
+.library-audio-player {
+  width: 100%;
+  height: 32px;
+}
+
+.library-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.library-card-actions .btn-secondary {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
+}
+
+.library-card-actions .btn-save {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.library-card-actions .btn-save:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+.library-card-actions .btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.library-card-actions .btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Feature 13: Audio Format Conversion */
+.format-select {
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.format-select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.convert-btn {
+  padding: 0.5rem 0.75rem;
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.convert-btn:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.3);
+}
+
+.convert-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Feature 14: Saved Configs Library */
+.saved-configs-library {
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.saved-configs-library .library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.saved-configs-library .library-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.saved-configs-library .btn-primary {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.error-message-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.error-dismiss {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 1rem;
+}
+
+.error-dismiss:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.loading-placeholder {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.configs-empty {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.configs-empty .hint {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 0.5rem;
+}
+
+.configs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.config-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s;
+}
+
+.config-card:hover {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.config-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.config-card-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #667eea;
+  font-weight: 500;
+}
+
+.config-date {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.config-description {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.config-settings {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0.5rem 0;
+}
+
+.config-setting {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.config-setting span {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.config-setting strong {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.config-setting.config-highlight {
+  grid-column: 1 / -1;
+  justify-content: center;
+  padding: 0.25rem;
+  background: rgba(102, 126, 234, 0.15);
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.config-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.config-actions .btn-primary {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+/* Panel header actions */
+.panel-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}

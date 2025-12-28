@@ -375,6 +375,116 @@ const server = serve({
         }),
     },
 
+    "/api/configs": {
+      GET: req =>
+        withSession(req, sessionId => {
+          const rows = db
+            .query<
+              { id: string; name: string; description: string | null; settings_json: string; created_at: number },
+              { sessionId: string }
+            >(
+              "SELECT id, name, description, settings_json, created_at FROM saved_configs WHERE session_id = $sessionId ORDER BY created_at DESC",
+            )
+            .all({ sessionId });
+
+          const configs = rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            settings: safeParseJsonObject(row.settings_json),
+            created_at: row.created_at,
+          }));
+
+          return Response.json({ configs });
+        }),
+
+      POST: req =>
+        withSession(req, async sessionId => {
+          const body = (await req.json()) as {
+            name: string;
+            description?: string | null;
+            settings: GenerationSettings;
+          };
+
+          if (!body.name?.trim()) {
+            return jsonError("Name is required", 400);
+          }
+
+          const id = crypto.randomUUID();
+          const now = Date.now();
+
+          db.query(
+            `INSERT INTO saved_configs (id, session_id, name, description, settings_json, created_at)
+            VALUES ($id, $session_id, $name, $description, $settings_json, $created_at)`,
+          ).run({
+            id,
+            session_id: sessionId,
+            name: body.name.trim(),
+            description: body.description?.trim() || null,
+            settings_json: JSON.stringify(body.settings),
+            created_at: now,
+          });
+
+          return Response.json({
+            id,
+            name: body.name.trim(),
+            description: body.description?.trim() || null,
+            settings: body.settings,
+            created_at: now,
+          });
+        }),
+    },
+
+    "/api/configs/:id": {
+      PUT: req =>
+        withSession(req, async sessionId => {
+          const id = req.params.id;
+          const body = (await req.json()) as {
+            name?: string;
+            description?: string | null;
+            settings?: GenerationSettings;
+          };
+
+          const updates: string[] = [];
+          const params: Record<string, unknown> = {};
+
+          if (body.name !== undefined) {
+            updates.push("name = $name");
+            params.name = body.name.trim();
+          }
+          if (body.description !== undefined) {
+            updates.push("description = $description");
+            params.description = body.description?.trim() || null;
+          }
+          if (body.settings !== undefined) {
+            updates.push("settings_json = $settings_json");
+            params.settings_json = JSON.stringify(body.settings);
+          }
+
+          if (updates.length === 0) {
+            return Response.json({ success: true });
+          }
+
+          const sql = `UPDATE saved_configs SET ${updates.join(", ")} WHERE id = $id AND session_id = $sessionId`;
+
+          db.query(sql).run({ id, sessionId, ...params });
+
+          return Response.json({ success: true });
+        }),
+
+      DELETE: req =>
+        withSession(req, sessionId => {
+          const id = req.params.id;
+
+          db.query("DELETE FROM saved_configs WHERE id = $id AND session_id = $sessionId").run({
+            id,
+            sessionId,
+          });
+
+          return Response.json({ success: true });
+        }),
+    },
+
     // Serve index.html for all unmatched routes.
     "/*": index,
   },

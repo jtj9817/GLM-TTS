@@ -3,8 +3,12 @@ import JSZip from "jszip";
 import "./index.css";
 import { StorageManager } from "./components/StorageManager";
 import { GenerationQueue } from "./components/GenerationQueue";
+import { WaveformVisualizer } from "./components/WaveformVisualizer";
+import { ReferenceAudioLibraryModal } from "./components/ReferenceAudioLibraryModal";
+import { SavedConfigsLibrary } from "./components/SavedConfigsLibrary";
 import { useReferenceAudioDB, getAudioDuration } from "./hooks/useIndexedDB";
 import { useQueue } from "./hooks/useQueue";
+import { useAudioConverter } from "./hooks/useAudioConverter";
 import type {
   Generation,
   GenerationSettings,
@@ -332,7 +336,51 @@ export function App() {
     processQueue,
     retryFailed,
   } = useQueue();
-  
+
+  // Audio format conversion
+  const {
+    convertToMP3,
+    convertToFLAC,
+    convertToOGG,
+    loaded: ffmpegLoaded,
+    loading: ffmpegLoading,
+  } = useAudioConverter();
+
+  const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [selectedFormat, setSelectedFormat] = useState<"wav" | "mp3" | "flac" | "ogg">("wav");
+
+  // Audio converter helper
+  const handleConvertAndDownload = async (gen: Generation, format: "mp3" | "flac" | "ogg") => {
+    if (convertingId) return;
+    setConvertingId(gen.id);
+    setError(null);
+
+    try {
+      let blob: Blob;
+      if (format === "mp3") {
+        blob = await convertToMP3(gen.audio_url);
+      } else if (format === "flac") {
+        blob = await convertToFLAC(gen.audio_url);
+      } else {
+        blob = await convertToOGG(gen.audio_url);
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const baseName = gen.output_filename?.replace(/\.[^.]*$/, "") || `generation-${gen.id}`;
+      link.download = `${baseName}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(`Conversion failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setConvertingId(null);
+    }
+  };
+
   const audioInputRef = useRef<HTMLInputElement>(null);
   const outputPanelRef = useRef<HTMLDivElement>(null);
   const prevGenerationsLengthRef = useRef(generations.length);
@@ -346,7 +394,15 @@ export function App() {
   } = useReferenceAudioDB();
   const [savedReferenceAudios, setSavedReferenceAudios] = useState<ReferenceAudioEntry[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [waveformEnabled, setWaveformEnabled] = useState(() => {
+    try {
+      return localStorage.getItem("glmtts_waveform") !== "false";
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     void (async () => {
@@ -392,6 +448,25 @@ export function App() {
       console.error("Failed to load saved reference audios:", err);
     }
   }, [dbReady, listAudio]);
+
+  // Update a library entry (rename)
+  const handleUpdateLibraryEntry = async (entry: ReferenceAudioEntry) => {
+    try {
+      await saveAudio(entry);
+      await loadSavedReferenceAudios();
+    } catch (err) {
+      setError(`Failed to update: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  // Toggle waveform preference
+  useEffect(() => {
+    try {
+      localStorage.setItem("glmtts_waveform", String(waveformEnabled));
+    } catch {
+      // ignore
+    }
+  }, [waveformEnabled]);
 
   useEffect(() => {
     loadSavedReferenceAudios();
@@ -949,6 +1024,14 @@ export function App() {
           <hr className="settings-divider" />
 
           <StorageManager onCleanup={loadGenerations} apiBase={API_BASE} />
+
+          <hr className="settings-divider" />
+
+          <SavedConfigsLibrary
+            apiBase={API_BASE}
+            onLoad={setSettings}
+            currentSettings={settings}
+          />
         </div>
       )}
 
@@ -958,61 +1041,18 @@ export function App() {
         <div className="panel">
           <div className="panel-header">
             <h2>Reference Voice</h2>
-            {dbReady && savedReferenceAudios.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowLibrary(v => !v)}
-                className="btn-library"
-              >
-                {showLibrary ? "Hide Library" : `Library (${savedReferenceAudios.length})`}
-              </button>
-            )}
-          </div>
-
-          {showLibrary && savedReferenceAudios.length > 0 && (
-            <div className="reference-library">
-              <div className="library-header">
-                <span>Saved Reference Audio</span>
-              </div>
-              <div className="library-items">
-                {savedReferenceAudios.map(entry => (
-                  <div key={entry.id} className="library-item">
-                    <div className="library-item-info">
-                      <span className="library-item-name">{entry.name}</span>
-                      {entry.duration && (
-                        <span className="library-item-duration">
-                          {Math.round(entry.duration)}s
-                        </span>
-                      )}
-                      {entry.transcript && (
-                        <span className="library-item-transcript" title={entry.transcript}>
-                          {entry.transcript.slice(0, 50)}{entry.transcript.length > 50 ? "..." : ""}
-                        </span>
-                      )}
-                    </div>
-                    <div className="library-item-actions">
-                      <button
-                        type="button"
-                        onClick={() => handleLoadFromLibrary(entry)}
-                        className="btn-load"
-                        title="Load this reference"
-                      >
-                        Use
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFromLibrary(entry.id)}
-                        className="btn-delete-small"
-                        title="Delete from library"
-                      >
-                        X
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="panel-header-actions">
+              {dbReady && savedReferenceAudios.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowLibraryModal(true)}
+                  className="btn-library"
+                >
+                  📚 Library ({savedReferenceAudios.length})
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="form-group">
             <label>Upload Reference Audio</label>
@@ -1142,7 +1182,17 @@ export function App() {
         />
 
         <div className="panel output-panel" ref={outputPanelRef}>
-          <h2>Output</h2>
+          <div className="panel-header">
+            <h2>Output</h2>
+            <label className="checkbox waveform-toggle">
+              <input
+                type="checkbox"
+                checked={waveformEnabled}
+                onChange={e => setWaveformEnabled(e.target.checked)}
+              />
+              Show Waveforms
+            </label>
+          </div>
 
           {generations.length > 0 ? (
             <div className="output-audio">
@@ -1169,6 +1219,12 @@ export function App() {
                     </button>
                   </div>
 
+                  {waveformEnabled && (
+                    <div className="waveform-wrapper">
+                      <WaveformVisualizer audioUrl={gen.audio_url} height={80} />
+                    </div>
+                  )}
+
                   <audio
                     controls
                     className="audio-player"
@@ -1181,7 +1237,7 @@ export function App() {
                       download={gen.output_filename}
                       className="download-btn"
                     >
-                      Download
+                      Download WAV
                     </a>
                     <button
                       type="button"
@@ -1189,8 +1245,31 @@ export function App() {
                       className="export-btn"
                       disabled={exportingId !== null}
                     >
-                      {exportingId === gen.id ? "Exporting..." : "Export + Settings"}
+                      {exportingId === gen.id ? "Exporting..." : "📦 Export + Settings"}
                     </button>
+                    {ffmpegLoaded && (
+                      <select
+                        value={selectedFormat}
+                        onChange={e => setSelectedFormat(e.target.value as typeof selectedFormat)}
+                        className="format-select"
+                        title="Convert and download in different format"
+                      >
+                        <option value="wav">WAV (Original)</option>
+                        <option value="mp3">MP3 (Compressed)</option>
+                        <option value="flac">FLAC (Lossless)</option>
+                        <option value="ogg">OGG Vorbis</option>
+                      </select>
+                    )}
+                    {ffmpegLoaded && selectedFormat !== "wav" && (
+                      <button
+                        type="button"
+                        onClick={() => handleConvertAndDownload(gen, selectedFormat)}
+                        className="convert-btn"
+                        disabled={convertingId === gen.id || ffmpegLoading}
+                      >
+                        {convertingId === gen.id ? "Converting..." : `⬇️ ${selectedFormat.toUpperCase()}`}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1206,10 +1285,20 @@ export function App() {
           Clear Speaker Cache
         </button>
         <p className="tips">
-          <strong>Tips:</strong> Use clear, high-quality reference audio (3-10 seconds). 
+          <strong>Tips:</strong> Use clear, high-quality reference audio (3-10 seconds).
           Matching reference text improves voice similarity.
         </p>
       </footer>
+
+      {/* Reference Audio Library Modal */}
+      <ReferenceAudioLibraryModal
+        isOpen={showLibraryModal}
+        onClose={() => setShowLibraryModal(false)}
+        onSelect={handleLoadFromLibrary}
+        library={savedReferenceAudios}
+        onDelete={handleDeleteFromLibrary}
+        onSave={handleUpdateLibraryEntry}
+      />
     </div>
   );
 }
