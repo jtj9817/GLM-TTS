@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
+import sys
 import yaml
 from typing import Union, Optional, List, Dict, Any
 import torch
@@ -19,6 +21,14 @@ import torch.nn as nn
 from transformers import LlamaConfig, LlamaForCausalLM
 from peft import LoraConfig, get_peft_model, TaskType
 from cosyvoice.utils import common
+
+# Configure module-level logger with explicit handler to ensure visibility
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 class GLMTTS(nn.Module):
@@ -138,11 +148,21 @@ class GLMTTS(nn.Module):
         weighted_scores: torch.Tensor,
         decoded_tokens: List[int],
         sampling: int,
+        top_p: float = 0.8,
+        temperature: float = 1.0,
     ) -> torch.Tensor:
         """
         Wrapper for RAS (Random Access Sampling) method.
         """
-        return common.ras_sampling(weighted_scores, decoded_tokens, sampling, temperature=1)
+        # In RAS, nucleus sampling is controlled by top_p/top_k (top_k := sampling).
+        return common.ras_sampling(
+            weighted_scores,
+            decoded_tokens,
+            sampling=sampling,
+            top_p=top_p,
+            top_k=sampling,
+            temperature=temperature,
+        )
 
     @torch.inference_mode()
     def inference(
@@ -155,6 +175,8 @@ class GLMTTS(nn.Module):
         prompt_speech_token_len: torch.Tensor,
         beam_size: int = 1,
         sampling: int = 25,
+        top_p: float = 0.8,
+        temperature: float = 1.0,
         max_token_text_ratio: float = 20,
         min_token_text_ratio: float = 2,
         sample_method: str = "ras",
@@ -171,7 +193,9 @@ class GLMTTS(nn.Module):
             prompt_speech_token: Prompt speech token tensor.
             prompt_speech_token_len: Length of prompt speech tokens.
             beam_size: Beam size for sampling (default 1).
-            sampling: Top-k value or sampling parameter.
+            sampling: Top-k value.
+            top_p: Nucleus sampling p (only used for sample_method='ras').
+            temperature: Sampling temperature (only used for sample_method='ras').
             max_token_text_ratio: Multiplier to determine max generation length.
             min_token_text_ratio: Multiplier to determine min generation length.
             sample_method: 'ras' or 'topk'.
@@ -181,6 +205,13 @@ class GLMTTS(nn.Module):
             torch.Tensor: Generated audio tokens (shifted by ATS offset).
         """
         device = text.device
+
+        if sampling <= 0:
+            raise ValueError("sampling (top_k) must be > 0")
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError("top_p must be in (0, 1]")
+        if temperature <= 0:
+            raise ValueError("temperature must be > 0")
 
         # 1. Preprocess Prompt Tokens
         # If prompts exist, add the audio start token offset if necessary
@@ -228,8 +259,14 @@ class GLMTTS(nn.Module):
         # 4. Step-by-Step Decoding
         out_tokens = []
         past_key_values = None
+        LOG_INTERVAL = 20  # Log every 20 tokens
 
         for i in range(max_len):
+            # Log progress periodically
+            if i > 0 and i % LOG_INTERVAL == 0:
+                progress_pct = min(100, int((i / max_len) * 100))
+                logger.info(f"[LLM] Generating tokens: {i}/{max_len} ({progress_pct}%)")
+
             model_input = {
                 "inputs_embeds": inputs_embeds,
                 "output_hidden_states": True,
@@ -254,7 +291,9 @@ class GLMTTS(nn.Module):
                 top_ids = self.sampling_ids_ras(
                     logp.squeeze(dim=0), 
                     out_tokens, 
-                    sampling
+                    sampling,
+                    top_p=top_p,
+                    temperature=temperature,
                 ).item()
             elif sample_method == "topk":
                 top_ids = self.sampling_ids(
@@ -274,6 +313,9 @@ class GLMTTS(nn.Module):
             
             # Prepare input for the next step (auto-regressive)
             inputs_embeds = self.llama_embedding(torch.LongTensor([top_ids]).to(device))[None]
+
+        # Log completion
+        logger.info(f"[LLM] Token generation complete: {len(out_tokens)} tokens generated")
 
         # 5. Validation and Output Construction
         # Ensure all tokens are within the valid audio token range

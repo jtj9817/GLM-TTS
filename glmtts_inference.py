@@ -113,6 +113,10 @@ def local_llm_forward(
     prompt_speech_token,
     beam_size=1,
     sampling=25,
+    top_p=0.8,
+    temperature=1.0,
+    max_token_text_ratio=20,
+    min_token_text_ratio=2,
     sample_method="ras",
 ):
     """
@@ -131,8 +135,12 @@ def local_llm_forward(
         prompt_speech_token_len=prompt_speech_token_len,
         beam_size=beam_size,
         sampling=sampling,
+        top_p=top_p,
+        temperature=temperature,
+        max_token_text_ratio=max_token_text_ratio,
+        min_token_text_ratio=min_token_text_ratio,
         sample_method=sample_method,
-        spk=None,  # No specific speaker embedding needed for generic pretrain inference here
+        spk="tongtong",
     )
     return tts_speech_token[0].tolist()
 
@@ -217,6 +225,12 @@ def generate_long(
     embedding,
     seed=0,
     sample_method="ras",
+    sampling=25,
+    top_p=0.8,
+    temperature=1.0,
+    beam_size=1,
+    max_token_text_ratio=20,
+    min_token_text_ratio=2,
     flow_prompt_token=None,
     speech_feat=None,
     local_llm_forward=local_llm_forward,
@@ -235,8 +249,11 @@ def generate_long(
         "syn_text_phoneme": [],
     }
     short_text_list = text_frontend.split_by_len(syn_text)
+    total_chunks = len(short_text_list)
 
-    for _, tts_text in enumerate(short_text_list):
+    for chunk_idx, tts_text in enumerate(short_text_list):
+        text_preview = tts_text[:50] + ('...' if len(tts_text) > 50 else '')
+        logging.info(f"[Synthesis] Processing chunk {chunk_idx + 1}/{total_chunks}: '{text_preview}'")
         seed_util.set_seed(seed)
         tts_text_tn = text_frontend.text_normalize(
             tts_text
@@ -271,7 +288,13 @@ def generate_long(
             prompt_text_token=prompt_text_token,
             tts_text_token=tts_text_token,
             prompt_speech_token=prompt_speech_token,
-            sample_method=sample_method
+            beam_size=beam_size,
+            sampling=sampling,
+            top_p=top_p,
+            temperature=temperature,
+            max_token_text_ratio=max_token_text_ratio,
+            min_token_text_ratio=min_token_text_ratio,
+            sample_method=sample_method,
         )
 
         output_token_list.extend(token_list_res)
