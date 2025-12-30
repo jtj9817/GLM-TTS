@@ -30,6 +30,22 @@ import sentencepiece as spm
 
 global_need_mel_feature = False
 
+
+def _apply_phoneme_transforms(
+    text,
+    text_frontend=None,
+    phoneme_mix_prob=0.0,
+    phoneme_mix_ratio=0.5,
+):
+    if text_frontend is None or not getattr(text_frontend, "use_phoneme", False):
+        return text
+    text = text_frontend.g2p_infer(text)
+    if phoneme_mix_prob > 0:
+        text = text_frontend.replace_with_prob(
+            text, prob=phoneme_mix_prob, max_ratio=phoneme_mix_ratio
+        )
+    return text
+
 def resample(audio_data, resample_rate=22050):
     sample = {}
     sample['speech'], sample['sample_rate'] = torchaudio.load(audio_data)
@@ -45,7 +61,14 @@ def resample(audio_data, resample_rate=22050):
     return sample['speech']
 
 
-def collate_fn_wo_frontend(item_list, codec_token_name, tknr_fn, text_frontend=None):
+def collate_fn_wo_frontend(
+    item_list,
+    codec_token_name,
+    tknr_fn,
+    text_frontend=None,
+    phoneme_mix_prob=0.0,
+    phoneme_mix_ratio=0.5,
+):
     t1 = time.time()
     """
     item_list:
@@ -57,10 +80,22 @@ def collate_fn_wo_frontend(item_list, codec_token_name, tknr_fn, text_frontend=N
     for item in item_list:
         # ['prompt_text', 'prompt_speech', 'prompt_speech_token', 'prompt_speech_feat', 'embedding', 'syn_text']
         text = text_frontend.text_normalize(item["prompt_text"])
+        text = _apply_phoneme_transforms(
+            text,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
         text_token = tknr_fn(text)
         item["prompt_text_token"] = text_token
         
         text = text_frontend.text_normalize(item["syn_text"])
+        text = _apply_phoneme_transforms(
+            text,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
         text_token = tknr_fn(text)
         item["syn_text_token"] = text_token
         
@@ -115,7 +150,15 @@ def collate_fn_wo_frontend(item_list, codec_token_name, tknr_fn, text_frontend=N
 
     return output
 
-def collate_fn_sft(item_list, codec_token_name, tknr_fn, text_frontend=None, embedding=torch.zeros(1, 192)):
+def collate_fn_sft(
+    item_list,
+    codec_token_name,
+    tknr_fn,
+    text_frontend=None,
+    embedding=torch.zeros(1, 192),
+    phoneme_mix_prob=0.0,
+    phoneme_mix_ratio=0.5,
+):
     t1 = time.time()
     """
     item_list:
@@ -130,6 +173,12 @@ def collate_fn_sft(item_list, codec_token_name, tknr_fn, text_frontend=None, emb
         item["prompt_text_token"] = torch.zeros(0, dtype=torch.int32)
         
         text = text_frontend.text_normalize(item["syn_text"])
+        text = _apply_phoneme_transforms(
+            text,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
         text_token = tknr_fn(text)
         item["syn_text_token"] = text_token
         
@@ -193,7 +242,16 @@ def collate_fn_sft(item_list, codec_token_name, tknr_fn, text_frontend=None, emb
 
     return output
 
-def collate_fn_from_frontend(item_list, codec_token_name, tknr_fn, frontend=None, text_frontend=None, sample_rate=None):
+def collate_fn_from_frontend(
+    item_list,
+    codec_token_name,
+    tknr_fn,
+    frontend=None,
+    text_frontend=None,
+    sample_rate=None,
+    phoneme_mix_prob=0.0,
+    phoneme_mix_ratio=0.5,
+):
     t1 = time.time()
     """
     item_list:
@@ -205,10 +263,22 @@ def collate_fn_from_frontend(item_list, codec_token_name, tknr_fn, frontend=None
     for item in item_list:
         # ['prompt_text', 'prompt_speech', 'syn_text']
         text = text_frontend.text_normalize(item["prompt_text"])
+        text = _apply_phoneme_transforms(
+            text,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
         text_token = tknr_fn(text)
         item["prompt_text_token"] = text_token
         
         text = text_frontend.text_normalize(item["syn_text"])
+        text = _apply_phoneme_transforms(
+            text,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
         text_token = tknr_fn(text)
         item["syn_text_token"] = text_token
         
@@ -327,7 +397,8 @@ def get_train_loader(patterns, worker=1, max_token_in_batch=13000,
                      token_name="cosy_token", use_bucket=True, batch_size=16,
                      prefetch_factor=4, use_phone_id=False, tknr_fn=None, 
                      frontend=None, text_frontend=None, sample_rate=None, 
-                     mode="PRETRAIN", sft_embedding=None, use_emo_tag=False, use_prompt=True):
+                     mode="PRETRAIN", sft_embedding=None, use_emo_tag=False, use_prompt=True,
+                     phoneme_mix_prob=0.0, phoneme_mix_ratio=0.5):
 
 
     if mode == "LORA" or mode == "SFT" or not use_prompt:
@@ -356,11 +427,35 @@ def get_train_loader(patterns, worker=1, max_token_in_batch=13000,
     )
 
     if mode == "LORA" or mode == "SFT" or not use_prompt:
-        collate_fn = partial(collate_fn_sft, codec_token_name=token_name, tknr_fn=tknr_fn, text_frontend=text_frontend, embedding=sft_embedding)
+        collate_fn = partial(
+            collate_fn_sft,
+            codec_token_name=token_name,
+            tknr_fn=tknr_fn,
+            text_frontend=text_frontend,
+            embedding=sft_embedding,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
     elif frontend is None:
-        collate_fn = partial(collate_fn_wo_frontend, codec_token_name=token_name, tknr_fn=tknr_fn, text_frontend=text_frontend)
+        collate_fn = partial(
+            collate_fn_wo_frontend,
+            codec_token_name=token_name,
+            tknr_fn=tknr_fn,
+            text_frontend=text_frontend,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
     else:
-        collate_fn = partial(collate_fn_from_frontend, codec_token_name=token_name, tknr_fn=tknr_fn, frontend=frontend, text_frontend=text_frontend, sample_rate=sample_rate)
+        collate_fn = partial(
+            collate_fn_from_frontend,
+            codec_token_name=token_name,
+            tknr_fn=tknr_fn,
+            frontend=frontend,
+            text_frontend=text_frontend,
+            sample_rate=sample_rate,
+            phoneme_mix_prob=phoneme_mix_prob,
+            phoneme_mix_ratio=phoneme_mix_ratio,
+        )
     if use_bucket:
         def len_fn(data):
             # pdb.set_trace()
@@ -383,4 +478,3 @@ def get_train_loader(patterns, worker=1, max_token_in_batch=13000,
                     )
 
     return dl
-

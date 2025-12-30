@@ -138,6 +138,8 @@ def get_args():
     parser.add_argument("--dryrun", default=True, type=ast.literal_eval)
     parser.add_argument("--use_phone", default=False, type=ast.literal_eval)
     parser.add_argument("--use_prompt", default=True, type=ast.literal_eval)
+    parser.add_argument("--phoneme_mix_prob", default=0.2, type=float)
+    parser.add_argument("--phoneme_mix_ratio", default=0.5, type=float)
 
     parser.add_argument('--config', help='config file', default='ckpt/llm/config.json')
     parser.add_argument('--data-patterns', default='data/rl.yaml')
@@ -195,6 +197,11 @@ def get_args():
     parser.add_argument("--lora_ckpt_path", default=None, type=str)
     parser.add_argument("--use_cache", default='True', choices=['True', ''])
     parser.add_argument("--stream", action="store_true")
+    parser.add_argument(
+        "--reward_server_url",
+        default=os.environ.get("GLM_TTS_REWARD_SERVER_URL", "http://172.18.68.109:808"),
+    )
+    parser.add_argument("--local_prosody_reward", default=False, type=ast.literal_eval)
     
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
@@ -216,7 +223,7 @@ if __name__ == '__main__':
     # =============================================================== model
     
     sample_rate = 24000
-    frontend, text_frontend, speech_tokenizer, llm, flow = load_models(use_phoneme=False)
+    frontend, text_frontend, speech_tokenizer, llm, flow = load_models(use_phoneme=args.use_phone)
 
     del speech_tokenizer, frontend.campplus_session
     torch.cuda.empty_cache()  # 清空未用显存
@@ -225,7 +232,12 @@ if __name__ == '__main__':
     torch.cuda.empty_cache()  # 再保守一次清理
     
 
-    reward_func = partial(reward_function_server, flow=flow, server_url="http://172.18.68.109:808")
+    reward_func = partial(
+        reward_function_server,
+        flow=flow,
+        server_url=args.reward_server_url,
+        enable_local_prosody_reward=args.local_prosody_reward,
+    )
     
     with open(args.config, 'r') as f:
         configs = load_hyperpyyaml(f)
@@ -308,7 +320,9 @@ if __name__ == '__main__':
         batch_size=1, use_bucket=False,
         use_phone_id=False, tknr_fn=frontend.tokenize_fn,
         frontend=None, text_frontend=text_frontend, sample_rate=sample_rate,
-        mode=args.mode, sft_embedding=embedding, use_emo_tag=True, use_prompt=args.use_prompt)
+        mode=args.mode, sft_embedding=embedding, use_emo_tag=True, use_prompt=args.use_prompt,
+        phoneme_mix_prob=args.phoneme_mix_prob if args.use_phone else 0.0,
+        phoneme_mix_ratio=args.phoneme_mix_ratio)
     # =============================================================== training...
     if is_main_world():
         print("patterns:", len(patterns))
@@ -329,4 +343,3 @@ if __name__ == '__main__':
         executor.train_one_epoc(model, optimizer, scheduler, train_data_loader, None, writer, info_dict,
                                 group_join, ref_model=ref_model, reward_func=reward_func)
         dist.destroy_process_group(group_join)
-

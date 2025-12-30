@@ -49,6 +49,8 @@ def get_pitch_energy_var(y, sr):
     # pyin输出的f0中，非发声部分是nan，建议只计算有音高的部分的方差：
     f0_valid = f0[~np.isnan(f0)]
     energy_valid = energy[~np.isnan(f0)]
+    if len(f0_valid) == 0 or len(energy_valid) == 0:
+        return 0.0, 0.0
     energy_var = np.var(energy_valid)
     pitch_var = np.var(f0_valid)
     
@@ -70,6 +72,8 @@ def get_pitch(y, sr):
 
     # pyin输出的f0中，非发声部分是nan，建议只计算有音高的部分的方差：
     f0_valid = f0[~np.isnan(f0)]
+    if len(f0_valid) == 0:
+        return 0.0
     pitch_mean = np.mean(f0_valid)
     return pitch_mean
 
@@ -84,7 +88,8 @@ def reward_function_server(
     ref_text: str,
     emotion: torch.Tensor,
     flow,
-    server_url="http://172.18.104.111:808"
+    server_url="http://172.18.104.111:808",
+    enable_local_prosody_reward: bool = False,
 ) -> Dict[str, Any]:
     # 1. 生成 audio 文件并保存
     try:
@@ -132,11 +137,24 @@ def reward_function_server(
         #     ret["reward_info"]["energy_reward"] = energy_var
         #     ret["reward_info"]["pitch_reward"] = pitch_var
         # except:
-        ret["reward_info"]["token_cer_reward"] = (ret["reward_info"]["token_cer_reward"] + [1]*len(response_token))[:len(response_token)]
-        ret["reward_info"]["energy_reward"] = 0
-        ret["reward_info"]["pitch_reward"] = 0
-        if ret["reward_info"]["laughter_reward"] < 1:
-            ret["reward_info"]["laughter_reward"] = 0
+        reward_info = ret.get("reward_info", {})
+        if "token_cer_reward" in reward_info:
+            reward_info["token_cer_reward"] = (
+                reward_info["token_cer_reward"] + [1] * len(response_token)
+            )[:len(response_token)]
+        else:
+            reward_info["token_cer_reward"] = [0] * len(response_token)
+        reward_info.setdefault("energy_reward", 0)
+        reward_info.setdefault("pitch_reward", 0)
+        if reward_info.get("laughter_reward", 0) < 1:
+            reward_info["laughter_reward"] = 0
+        if enable_local_prosody_reward:
+            energy_var, pitch_var = get_pitch_energy_var(
+                response_audio.squeeze(0).cpu().numpy(), sample_rate
+            )
+            reward_info["energy_reward"] = energy_var
+            reward_info["pitch_reward"] = pitch_var
+        ret["reward_info"] = reward_info
         
         
     except Exception as e:
